@@ -116,26 +116,3 @@ python bci_analysis_suite_v2.py
 Load one or more validated CSVs, choose features/classifiers and analysis techniques, and export figures and result tables.
 
 A typical workflow is: **collect → validate → analyze**.
-
----
-
-## Scientific Background
-
-The analysis methods draw on established EEG/BCI literature:
-
-- Pfurtscheller, G., & Lopes da Silva, F. H. (1999). *Event-related EEG/MEG synchronization and desynchronization.*
-- Webber, C. L., & Zbilut, J. P. (2005); Marwan, N., et al. (2007). *Recurrence quantification analysis.*
-- Rodrigues, P. G., et al. (2019). *Space-time recurrence (STR) connectivity.*
-- Stam, C. J. (2005); Abásolo, D., et al. (2006). *Nonlinear EEG dynamics and complexity.*
-
----
-
-## Disclaimer
-
-This software is provided for **research and educational use only**. It is **not a medical device** and must not be used for diagnosis, treatment, or any clinical decision-making.
-
----
-
-## License
-
-Add your chosen license here (e.g., MIT). Create a `LICENSE` file in the repository root.
