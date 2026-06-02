@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BCI Data Integrity Validator</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;600;700;800&display=swap');
+
+  :root {
+    --bg: #0a0d12;
+    --surface: #12161e;
+    --surface2: #1a1f2b;
+    --surface3: #222938;
+    --border: #2a3245;
+    --text: #d4dae6;
+    --muted: #5e6e87;
+    --accent: #4fc3f7;
+    --accent-dim: #1a3a52;
+    --green: #66bb6a;
+    --green-dim: #1a3d1c;
+    --red: #ef5350;
+    --red-dim: #3d1a1a;
+    --yellow: #ffd54f;
+    --yellow-dim: #3d3a1a;
+    --orange: #ffa726;
+    --purple: #b39ddb;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Outfit', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 32px 24px;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 40px;
+    position: relative;
+  }
+
+  .header::after {
+    content: '';
+    display: block;
+    width: 80px;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--purple));
+    margin: 16px auto 0;
+    border-radius: 2px;
+  }
+
+  .header h1 {
+    font-size: 1.8rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent), var(--purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .header p {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 6px;
+  }
+
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 16px;
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: var(--surface);
+    margin-bottom: 24px;
+  }
+
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+  }
+
+  .drop-zone .icon {
+    font-size: 2.5rem;
+    margin-bottom: 12px;
+    opacity: 0.7;
+  }
+
+  .drop-zone .label {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--accent);
+  }
+
+  .drop-zone .sub {
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin-top: 6px;
+  }
+
+  .results { display: none; }
+  .results.active { display: block; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  .card-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-title .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+
+  .metric {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+
+  .metric .label {
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .metric .value {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-top: 4px;
+  }
+
+  .metric .unit {
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-weight: 400;
+    margin-left: 2px;
+  }
+
+  .check-list { list-style: none; }
+
+  .check-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--surface3);
+    font-size: 0.88rem;
+  }
+
+  .check-item:last-child { border-bottom: none; }
+
+  .check-icon {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .check-icon.pass { background: var(--green-dim); color: var(--green); }
+  .check-icon.fail { background: var(--red-dim); color: var(--red); }
+  .check-icon.warn { background: var(--yellow-dim); color: var(--yellow); }
+
+  .check-detail {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .marker-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+  }
+
+  .marker-table th {
+    text-align: left;
+    padding: 8px 12px;
+    color: var(--muted);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.68rem;
+  }
+
+  .marker-table td {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--surface3);
+  }
+
+  .marker-table tr:last-child td { border-bottom: none; }
+
+  .tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+
+  .tag.ok { background: var(--green-dim); color: var(--green); }
+  .tag.miss { background: var(--red-dim); color: var(--red); }
+  .tag.extra { background: var(--yellow-dim); color: var(--yellow); }
+
+  .verdict-box {
+    text-align: center;
+    padding: 28px;
+    border-radius: 12px;
+    margin-top: 20px;
+  }
+
+  .verdict-box.good {
+    background: linear-gradient(135deg, var(--green-dim), #0d2412);
+    border: 1px solid #2d5a3a;
+  }
+
+  .verdict-box.bad {
+    background: linear-gradient(135deg, var(--red-dim), #1e0d0d);
+    border: 1px solid #5a2d2d;
+  }
+
+  .verdict-box.mixed {
+    background: linear-gradient(135deg, var(--yellow-dim), #1e1a0d);
+    border: 1px solid #5a522d;
+  }
+
+  .verdict-box .verdict-icon { font-size: 2rem; margin-bottom: 8px; }
+  .verdict-box .verdict-text { font-size: 1.1rem; font-weight: 700; }
+  .verdict-box .verdict-detail { font-size: 0.82rem; color: var(--muted); margin-top: 6px; }
+
+  .timeline-bar {
+    height: 32px;
+    background: var(--surface2);
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+    margin: 8px 0;
+  }
+
+  .timeline-seg {
+    position: absolute;
+    top: 0; bottom: 0;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+  }
+
+  .timeline-seg:hover { opacity: 1; }
+
+  .timeline-legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  .timeline-legend span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .timeline-legend .swatch {
+    width: 10px; height: 10px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+
+  .gap-list {
+    max-height: 160px;
+    overflow-y: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+    background: var(--surface2);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-top: 8px;
+  }
+
+  .gap-list::-webkit-scrollbar { width: 4px; }
+  .gap-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  input[type="file"] { display: none; }
+
+  .btn-reset {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 8px 20px;
+    border-radius: 8px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 16px;
+  }
+
+  .btn-reset:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>BCI Data Integrity Validator</h1>
+    <p>Validação de integridade para arquivos CSV do BCI-IM Collection Suite</p>
+  </div>
+
+  <div class="drop-zone" id="dropZone">
+    <div class="icon">📂</div>
+    <div class="label">Arraste seu CSV aqui ou clique para selecionar</div>
+    <div class="sub">Arquivo gerado pelo BCI-IM Collection Suite v2.0</div>
+    <input type="file" id="fileInput" accept=".csv">
+  </div>
+
+  <div class="results" id="results"></div>
+</div>
+
+<script>
+const MARKERS = {
+  100: "session_start", 200: "session_end",
+  90: "block_start", 91: "block_end",
+  1: "fixation", 2: "beep",
+  50: "rest_start", 51: "rest_end",
+  99: "pause_start", 98: "pause_end",
+  10: "mi_left", 11: "mi_right",
+  20: "mov_hand", 21: "mov_elbow", 22: "mov_shoulder"
+};
+
+const MARKER_COLORS = {
+  100: "#4fc3f7", 200: "#4fc3f7",
+  90: "#b39ddb", 91: "#b39ddb",
+  1: "#6b7a94", 2: "#ffd54f",
+  50: "#81c784", 51: "#81c784",
+  99: "#ffa726", 98: "#ffa726",
+  10: "#ef5350", 11: "#4fc3f7",
+  20: "#ffa726", 21: "#b39ddb", 22: "#66bb6a"
+};
+
+const CUE_MARKERS = new Set([10, 11, 20, 21, 22]);
+const SFREQ = 250;
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const resultsDiv = document.getElementById('results');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) processFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files.length) processFile(e.target.files[0]); });
+
+function processFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    const { meta, data } = parseCSV(text);
+    const analysis = analyze(data, meta);
+    renderResults(analysis, file.name);
+  };
+  reader.readAsText(file);
+}
+
+function parseCSV(text) {
+  const lines = text.split('\n');
+  const meta = {};
+  let dataStart = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith('#')) {
+      const m = lines[i].replace(/^#\s*/, '').match(/^(.+?):\s*(.+)$/);
+      if (m) meta[m[1].trim()] = m[2].trim();
+      dataStart = i + 1;
+    } else break;
+  }
+
+  const csvLines = lines.slice(dataStart).filter(l => l.trim());
+  if (!csvLines.length) return { meta, data: { columns: [], rows: [] } };
+
+  const columns = csvLines[0].split(',').map(c => c.trim());
+  const rows = csvLines.slice(1).map(l => {
+    const vals = l.split(',');
+    const obj = {};
+    columns.forEach((c, i) => obj[c] = parseFloat(vals[i]) || 0);
+    return obj;
+  });
+
+  return { meta, data: { columns, rows } };
+}
+
+function analyze(data, meta) {
+  const rows = data.rows;
+  const N = rows.length;
+  const checks = [];
+  const markers = {};
+
+  if (N === 0) return { checks: [{ pass: false, text: "Arquivo vazio ou inválido", detail: "" }], markers: {}, stats: {}, meta };
+
+  // --- Basic stats ---
+  const chNames = ["C3","Cz","C4","P3","P4","F3","F4","Pz"];
+  const eegCols = data.columns.filter(c => chNames.includes(c));
+  const hasMarker = data.columns.includes('Marker');
+  const hasTimestamp = data.columns.includes('Timestamp');
+
+  const duration = N / SFREQ;
+
+  // --- Timestamps continuity ---
+  let tsGaps = [];
+  let maxGap = 0;
+  let tsMonotonic = true;
+  if (hasTimestamp) {
+    for (let i = 1; i < N; i++) {
+      const dt = rows[i].Timestamp - rows[i-1].Timestamp;
+      if (dt < 0) tsMonotonic = false;
+      if (dt > 0.008) { // > 2x expected (1/250 = 0.004)
+        const gapMs = dt * 1000;
+        tsGaps.push({ idx: i, gap: gapMs, time: (i / SFREQ).toFixed(2) });
+        if (dt > maxGap) maxGap = dt;
+      }
+    }
+  }
+
+  checks.push({
+    pass: hasTimestamp,
+    text: "Coluna Timestamp presente",
+    detail: hasTimestamp ? `${N} amostras, ${duration.toFixed(1)}s` : "Sem timestamp — não é possível verificar continuidade"
+  });
+
+  if (hasTimestamp) {
+    checks.push({
+      pass: tsMonotonic,
+      text: "Timestamps monotônicos (sempre crescentes)",
+      detail: tsMonotonic ? "OK — sem retrocesso temporal" : "FALHA — timestamps voltam no tempo"
+    });
+
+    checks.push({
+      pass: tsGaps.length === 0,
+      warn: tsGaps.length > 0 && tsGaps.length < 5,
+      text: `Continuidade temporal (gaps > 8ms)`,
+      detail: tsGaps.length === 0
+        ? "Sem gaps detectados — dados contínuos"
+        : `${tsGaps.length} gap(s), maior = ${maxGap.toFixed(1) * 1000}ms`,
+      gaps: tsGaps
+    });
+  }
+
+  // --- EEG channels ---
+  checks.push({
+    pass: eegCols.length === 8,
+    warn: eegCols.length > 0 && eegCols.length < 8,
+    text: `Canais EEG: ${eegCols.length}/8 presentes`,
+    detail: eegCols.length === 8 ? eegCols.join(', ') : `Faltando: ${chNames.filter(c => !eegCols.includes(c)).join(', ')}`
+  });
+
+  // --- Check for flat/railed channels ---
+  const chanStats = {};
+  eegCols.forEach(ch => {
+    const vals = rows.map(r => r[ch]);
+    const mean = vals.reduce((a,b) => a+b, 0) / vals.length;
+    const std = Math.sqrt(vals.reduce((a,b) => a + (b-mean)**2, 0) / vals.length);
+    const min = Math.min(...vals.slice(0, 10000));
+    const max = Math.max(...vals.slice(0, 10000));
+    const unique = new Set(vals.slice(0, 5000).map(v => v.toFixed(2))).size;
+    const uniqueRatio = unique / Math.min(5000, vals.length);
+    chanStats[ch] = { mean, std, min, max, uniqueRatio, flat: std < 0.5, railed: uniqueRatio < 0.03 };
+  });
+
+  const flatChans = Object.entries(chanStats).filter(([,s]) => s.flat || s.railed).map(([c]) => c);
+  checks.push({
+    pass: flatChans.length === 0,
+    warn: flatChans.length > 0 && flatChans.length < 4,
+    text: `Canais com sinal flat/railed`,
+    detail: flatChans.length === 0
+      ? "Nenhum — todos os canais com variação normal"
+      : `⚠ ${flatChans.join(', ')} — verificar contato dos eletrodos`
+  });
+
+  // --- Marker analysis ---
+  let markerCounts = {};
+  let markerPositions = {};
+  if (hasMarker) {
+    rows.forEach((r, i) => {
+      const m = r.Marker;
+      if (m !== 0) {
+        markerCounts[m] = (markerCounts[m] || 0) + 1;
+        if (!markerPositions[m]) markerPositions[m] = [];
+        markerPositions[m].push(i);
+      }
+    });
+  }
+
+  checks.push({
+    pass: hasMarker && Object.keys(markerCounts).length > 0,
+    text: "Marcadores de evento presentes",
+    detail: hasMarker
+      ? `${Object.keys(markerCounts).length} tipos, ${Object.values(markerCounts).reduce((a,b)=>a+b,0)} total`
+      : "Sem coluna Marker"
+  });
+
+  // --- Session markers ---
+  const hasStart = (markerCounts[100] || 0) > 0;
+  const hasEnd = (markerCounts[200] || 0) > 0;
+  checks.push({
+    pass: hasStart && hasEnd,
+    warn: hasStart !== hasEnd,
+    text: "Marcadores de sessão (100=start, 200=end)",
+    detail: hasStart && hasEnd
+      ? `session_start ×${markerCounts[100]}, session_end ×${markerCounts[200]}`
+      : `Faltando: ${!hasStart ? 'session_start(100)' : ''} ${!hasEnd ? 'session_end(200)' : ''}`
+  });
+
+  // --- Block markers ---
+  const nBlockStart = markerCounts[90] || 0;
+  const nBlockEnd = markerCounts[91] || 0;
+  checks.push({
+    pass: nBlockStart > 0 && nBlockStart === nBlockEnd,
+    warn: nBlockStart > 0 && nBlockStart !== nBlockEnd,
+    text: `Blocos: block_start(90) ×${nBlockStart}, block_end(91) ×${nBlockEnd}`,
+    detail: nBlockStart === nBlockEnd
+      ? `${nBlockStart} bloco(s) completo(s)`
+      : `Desbalanceados — possível interrupção`
+  });
+
+  // --- Trial cue markers ---
+  const cueMarkerIds = [10,11,20,21,22];
+  const trialCues = cueMarkerIds.filter(m => markerCounts[m] > 0);
+  const totalTrials = trialCues.reduce((s, m) => s + (markerCounts[m] || 0), 0);
+  checks.push({
+    pass: totalTrials > 0,
+    text: `Trials detectados: ${totalTrials} total`,
+    detail: trialCues.map(m => `${MARKERS[m]} (${m}): ×${markerCounts[m]}`).join(', ') || 'Nenhum marcador de trial'
+  });
+
+  // --- Rest markers paired ---
+  const nRestStart = markerCounts[50] || 0;
+  const nRestEnd = markerCounts[51] || 0;
+  checks.push({
+    pass: nRestStart > 0 && nRestStart === nRestEnd,
+    warn: nRestStart > 0 && nRestStart !== nRestEnd,
+    text: `Repouso: rest_start(50) ×${nRestStart}, rest_end(51) ×${nRestEnd}`,
+    detail: nRestStart === nRestEnd
+      ? `${nRestStart} segmento(s) de repouso completos`
+      : `Desbalanceados — ${Math.abs(nRestStart-nRestEnd)} marcador(es) sem par`
+  });
+
+  // --- Marker ordering check ---
+  let orderOk = true;
+  let orderDetails = [];
+  if (hasMarker) {
+    const markerSeq = [];
+    rows.forEach((r, i) => {
+      if (r.Marker !== 0) markerSeq.push({ m: r.Marker, idx: i, time: (i/SFREQ).toFixed(2) });
+    });
+
+    // Check rest_start always before rest_end
+    let restStack = 0;
+    for (const ev of markerSeq) {
+      if (ev.m === 50) restStack++;
+      if (ev.m === 51) {
+        restStack--;
+        if (restStack < 0) {
+          orderOk = false;
+          orderDetails.push(`rest_end sem rest_start em t=${ev.time}s`);
+          restStack = 0;
+        }
+      }
+    }
+    if (restStack > 0) {
+      orderOk = false;
+      orderDetails.push(`${restStack} rest_start sem rest_end correspondente`);
+    }
+
+    // Check block_start always before block_end
+    let blockStack = 0;
+    for (const ev of markerSeq) {
+      if (ev.m === 90) blockStack++;
+      if (ev.m === 91) {
+        blockStack--;
+        if (blockStack < 0) {
+          orderOk = false;
+          orderDetails.push(`block_end sem block_start em t=${ev.time}s`);
+          blockStack = 0;
+        }
+      }
+    }
+
+    // Check trial sequence inside blocks: fixation → beep → cue → rest_start → rest_end
+    // Simplified: just check that cue markers appear between block_start and block_end
+    let inBlock = false;
+    let cuesOutsideBlock = 0;
+    for (const ev of markerSeq) {
+      if (ev.m === 90) inBlock = true;
+      if (ev.m === 91) inBlock = false;
+      if (CUE_MARKERS.has(ev.m) && !inBlock) cuesOutsideBlock++;
+    }
+    if (cuesOutsideBlock > 0) {
+      orderOk = false;
+      orderDetails.push(`${cuesOutsideBlock} trial cue(s) fora de blocos`);
+    }
+  }
+
+  checks.push({
+    pass: orderOk,
+    text: "Ordenação dos marcadores",
+    detail: orderOk
+      ? "Sequência correta: start→blocks→trials→end"
+      : orderDetails.join('; ')
+  });
+
+  // --- Trial duration consistency ---
+  let trialDurations = [];
+  if (hasMarker) {
+    cueMarkerIds.forEach(cm => {
+      const positions = markerPositions[cm] || [];
+      positions.forEach(pos => {
+        // Find next rest_start or next cue or block_end
+        let endPos = pos + 1;
+        while (endPos < N && rows[endPos].Marker === 0) endPos++;
+        const dur = (endPos - pos) / SFREQ;
+        if (dur > 0.5 && dur < 120) trialDurations.push({ marker: cm, dur, pos });
+      });
+    });
+  }
+
+  if (trialDurations.length > 0) {
+    const meanDur = trialDurations.reduce((s,t) => s + t.dur, 0) / trialDurations.length;
+    const stdDur = Math.sqrt(trialDurations.reduce((s,t) => s + (t.dur - meanDur)**2, 0) / trialDurations.length);
+    const outliers = trialDurations.filter(t => Math.abs(t.dur - meanDur) > 2 * stdDur);
+
+    checks.push({
+      pass: outliers.length === 0,
+      warn: outliers.length > 0 && outliers.length <= 2,
+      text: `Duração dos trials: ${meanDur.toFixed(1)}s ± ${stdDur.toFixed(2)}s`,
+      detail: outliers.length === 0
+        ? `${trialDurations.length} trials, duração consistente`
+        : `${outliers.length} trial(s) com duração atípica`
+    });
+  }
+
+  // --- Data between _collect_chunk calls: check for sample count gaps ---
+  // If timestamps exist, check effective sampling rate
+  if (hasTimestamp && N > 100) {
+    const tStart = rows[0].Timestamp;
+    const tEnd = rows[N-1].Timestamp;
+    const realDuration = tEnd - tStart;
+    const effectiveSR = (N - 1) / realDuration;
+    const srDeviation = Math.abs(effectiveSR - SFREQ) / SFREQ * 100;
+
+    checks.push({
+      pass: srDeviation < 2,
+      warn: srDeviation >= 2 && srDeviation < 5,
+      text: `Taxa de amostragem efetiva: ${effectiveSR.toFixed(1)} Hz`,
+      detail: srDeviation < 2
+        ? `Desvio de ${srDeviation.toFixed(2)}% do nominal (${SFREQ}Hz) — OK`
+        : `Desvio de ${srDeviation.toFixed(1)}% — possível perda de amostras`
+    });
+  }
+
+  // --- Protocol detection ---
+  const protocol = meta.Protocol || 'unknown';
+  const hasMov = [20,21,22].some(m => markerCounts[m] > 0);
+  const hasMI = [10,11].some(m => markerCounts[m] > 0);
+
+  let protocolMatch = true;
+  let protocolDetail = '';
+  if (protocol === 'movement' && !hasMov) {
+    protocolMatch = false;
+    protocolDetail = 'Metadado diz "movement" mas sem marcadores mov (20-22)';
+  } else if (protocol === 'graz_b' && !hasMI) {
+    protocolMatch = false;
+    protocolDetail = 'Metadado diz "graz_b" mas sem marcadores MI (10-11)';
+  } else if (protocol === 'movement' && hasMov) {
+    const movTypes = [20,21,22].filter(m => markerCounts[m] > 0);
+    protocolDetail = `Movement: ${movTypes.map(m => `${MARKERS[m]}×${markerCounts[m]}`).join(', ')}`;
+    if (movTypes.length < 3) {
+      protocolMatch = false;
+      protocolDetail += ` — ⚠ Apenas ${movTypes.length}/3 tipos de movimento registrados!`;
+    }
+  } else if (protocol === 'graz_b' && hasMI) {
+    protocolDetail = `Graz B: left×${markerCounts[10]||0}, right×${markerCounts[11]||0}`;
+  }
+
+  checks.push({
+    pass: protocolMatch,
+    text: `Protocolo: ${protocol}`,
+    detail: protocolDetail || `Detectado via marcadores`
+  });
+
+  const stats = {
+    samples: N,
+    duration,
+    channels: eegCols.length,
+    trials: totalTrials,
+    protocol,
+    chanStats,
+    markerCounts,
+    markerPositions,
+    tsGaps,
+    trialDurations
+  };
+
+  return { checks, stats, meta, data };
+}
+
+function renderResults(analysis, filename) {
+  const { checks, stats, meta } = analysis;
+  resultsDiv.innerHTML = '';
+  resultsDiv.classList.add('active');
+
+  // --- Overview card ---
+  let html = `<div class="card">
+    <div class="card-title"><span class="dot" style="background:var(--accent)"></span>Visão Geral — ${filename}</div>
+    <div class="metric-grid">
+      <div class="metric"><div class="label">Amostras</div><div class="value">${stats.samples.toLocaleString()}</div></div>
+      <div class="metric"><div class="label">Duração</div><div class="value">${stats.duration.toFixed(1)}<span class="unit">s</span></div></div>
+      <div class="metric"><div class="label">Canais EEG</div><div class="value">${stats.channels}<span class="unit">/8</span></div></div>
+      <div class="metric"><div class="label">Trials</div><div class="value">${stats.trials}</div></div>
+      <div class="metric"><div class="label">Protocolo</div><div class="value" style="font-size:1rem">${stats.protocol}</div></div>
+      <div class="metric"><div class="label">Sujeito</div><div class="value" style="font-size:1rem">${meta.Subject || '?'}</div></div>
+    </div>
+  </div>`;
+
+  // --- Timeline ---
+  if (stats.markerPositions && stats.samples > 0) {
+    html += `<div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--purple)"></span>Timeline de Marcadores</div>
+      <div class="timeline-bar" id="timeline">`;
+
+    const allMarkers = [];
+    Object.entries(stats.markerPositions).forEach(([m, positions]) => {
+      positions.forEach(pos => allMarkers.push({ m: parseInt(m), pos }));
+    });
+    allMarkers.sort((a, b) => a.pos - b.pos);
+
+    allMarkers.forEach(({ m, pos }) => {
+      const left = (pos / stats.samples * 100).toFixed(3);
+      const color = MARKER_COLORS[m] || '#666';
+      const w = m === 90 || m === 91 ? '2px' : '1.5px';
+      html += `<div class="timeline-seg" style="left:${left}%;width:${w};background:${color}" title="${MARKERS[m]||m} @ ${(pos/SFREQ).toFixed(1)}s"></div>`;
+    });
+
+    html += `</div>
+      <div class="timeline-legend">
+        <span><span class="swatch" style="background:#ef5350"></span>MI Left / Mov Hand</span>
+        <span><span class="swatch" style="background:#4fc3f7"></span>MI Right / Session</span>
+        <span><span class="swatch" style="background:#ffa726"></span>Movement / Pause</span>
+        <span><span class="swatch" style="background:#81c784"></span>Rest</span>
+        <span><span class="swatch" style="background:#b39ddb"></span>Block / Elbow</span>
+        <span><span class="swatch" style="background:#ffd54f"></span>Beep</span>
+      </div>
+    </div>`;
+  }
+
+  // --- Checks card ---
+  html += `<div class="card">
+    <div class="card-title"><span class="dot" style="background:var(--green)"></span>Verificações de Integridade</div>
+    <ul class="check-list">`;
+
+  checks.forEach(c => {
+    const icon = c.pass ? '✓' : (c.warn ? '!' : '✗');
+    const cls = c.pass ? 'pass' : (c.warn ? 'warn' : 'fail');
+    html += `<li class="check-item">
+      <span class="check-icon ${cls}">${icon}</span>
+      <div>
+        <div>${c.text}</div>
+        <div class="check-detail">${c.detail}</div>
+      </div>
+    </li>`;
+  });
+
+  html += `</ul></div>`;
+
+  // --- Marker table ---
+  if (Object.keys(stats.markerCounts).length > 0) {
+    html += `<div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--yellow)"></span>Contagem de Marcadores</div>
+      <table class="marker-table">
+        <thead><tr><th>Código</th><th>Nome</th><th>Contagem</th><th>Status</th></tr></thead>
+        <tbody>`;
+
+    const expectedMarkers = {
+      100: 1, 200: 1, 90: null, 91: null,
+      1: null, 2: null, 50: null, 51: null
+    };
+
+    // Add protocol-specific expected markers
+    if (stats.protocol === 'movement') {
+      [20,21,22].forEach(m => expectedMarkers[m] = null);
+    } else if (stats.protocol === 'graz_b') {
+      [10,11].forEach(m => expectedMarkers[m] = null);
+    }
+
+    Object.entries(stats.markerCounts).sort((a,b) => parseInt(a[0]) - parseInt(b[0])).forEach(([m, count]) => {
+      const mi = parseInt(m);
+      const name = MARKERS[mi] || `unknown_${mi}`;
+      const expected = expectedMarkers[mi];
+      let tag = '<span class="tag ok">OK</span>';
+      if (expected !== undefined && expected !== null && count !== expected) {
+        tag = `<span class="tag miss">esperado ${expected}</span>`;
+      }
+      html += `<tr><td>${mi}</td><td>${name}</td><td>${count}</td><td>${tag}</td></tr>`;
+    });
+
+    // Show missing expected markers
+    Object.keys(expectedMarkers).forEach(m => {
+      const mi = parseInt(m);
+      if (!stats.markerCounts[mi]) {
+        html += `<tr style="opacity:0.5"><td>${mi}</td><td>${MARKERS[mi]||'?'}</td><td>0</td><td><span class="tag miss">ausente</span></td></tr>`;
+      }
+    });
+
+    html += `</tbody></table></div>`;
+  }
+
+  // --- Timestamp gaps ---
+  if (stats.tsGaps && stats.tsGaps.length > 0) {
+    html += `<div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--red)"></span>Gaps Temporais Detectados</div>
+      <div class="gap-list">`;
+    stats.tsGaps.slice(0, 50).forEach(g => {
+      html += `<div>⚠ t=${g.time}s — gap de ${g.gap.toFixed(1)}ms (amostra #${g.idx})</div>`;
+    });
+    if (stats.tsGaps.length > 50) html += `<div>... e mais ${stats.tsGaps.length - 50} gaps</div>`;
+    html += `</div></div>`;
+  }
+
+  // --- Verdict ---
+  const nPass = checks.filter(c => c.pass).length;
+  const nFail = checks.filter(c => !c.pass && !c.warn).length;
+  const nWarn = checks.filter(c => c.warn).length;
+
+  let verdictClass, verdictIcon, verdictText, verdictDetail;
+  if (nFail === 0 && nWarn === 0) {
+    verdictClass = 'good';
+    verdictIcon = '✓';
+    verdictText = 'DADOS ÍNTEGROS';
+    verdictDetail = `Todas as ${nPass} verificações passaram. Dados prontos para análise.`;
+  } else if (nFail === 0) {
+    verdictClass = 'mixed';
+    verdictIcon = '⚠';
+    verdictText = 'DADOS COM AVISOS';
+    verdictDetail = `${nPass} OK, ${nWarn} aviso(s). Dados utilizáveis mas verifique os avisos.`;
+  } else {
+    verdictClass = 'bad';
+    verdictIcon = '✗';
+    verdictText = 'PROBLEMAS DETECTADOS';
+    verdictDetail = `${nFail} falha(s), ${nWarn} aviso(s). Revise os itens em vermelho.`;
+  }
+
+  html += `<div class="verdict-box ${verdictClass}">
+    <div class="verdict-icon">${verdictIcon}</div>
+    <div class="verdict-text">${verdictText}</div>
+    <div class="verdict-detail">${verdictDetail}</div>
+  </div>`;
+
+  html += `<center><button class="btn-reset" onclick="location.reload()">Validar outro arquivo</button></center>`;
+
+  resultsDiv.innerHTML = html;
+  resultsDiv.scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+</body>
+</html>
