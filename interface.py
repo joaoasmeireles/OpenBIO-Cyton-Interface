@@ -1,16 +1,39 @@
-"""
-╔══════════════════════════════════════════════════════════════════╗
-║           BCI-IM Data Collection Suite v2.0                      ║
-║           OpenBCI Cyton · Motor Imagery & Movement               ║
-║                                                                  ║
-║   Protocols: Graz B (Motor Imagery) · Movement Protocol (3 Class)║
-║   Board: OpenBCI Cyton 8-ch (BrainFlow ID 0)                     ║
-║   Channels: C3, Cz, C4, P3, P4, F3, F4, Pz                       ║
-╚══════════════════════════════════════════════════════════════════╝
+"""BCI-IM Data Collection Suite.
 
-Dependecies:
-    pip install brainflow numpy pandas
+A Tkinter desktop application for recording 8-channel EEG with an OpenBCI
+Cyton board (via BrainFlow) under two cued experimental protocols for
+motor-related brain-computer interface (BCI) research:
 
+* ``graz_b``   -- Graz protocol B motor imagery (left vs. right hand).
+* ``movement`` -- Three-class executed movement (hand grip, elbow extension,
+  shoulder raise/lower).
+
+The suite drives the full acquisition workflow: board connection (including a
+synthetic-board mode for development without hardware), a live sanity-check
+oscilloscope with per-channel quality flags, full-screen cued stimulus
+presentation with event markers inserted into the data stream, real-time
+band-power / concentration / signal-quality monitoring, and CSV export with a
+commented metadata header. A built-in quick-analysis viewer summarises a saved
+file (per-channel statistics and marker counts).
+
+Recorded channels (10-20 system): C3, Cz, C4, P3, P4, F3, F4, Pz.
+
+Event markers are defined in :data:`MARKERS` and written to the BrainFlow
+marker channel so downstream tools can segment trials, rest periods and blocks.
+
+Dependencies
+------------
+    pip install brainflow numpy pandas scipy
+
+Usage
+-----
+    python interface_v03.py
+
+Note
+----
+``winsound`` (auditory cues) is Windows-only; on other platforms the cues are
+silently skipped. ``os.startfile`` (open-folder buttons) is likewise
+Windows-only.
 """
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -45,7 +68,7 @@ CHANNEL_COLORS = [
     "#4FC3F7", "#81C784", "#FF8A65", "#BA68C8",
     "#FFD54F", "#4DD0E1", "#F48FB1", "#A1887F"
 ]
-
+DEFAULT_SAVE_PATH = os.path.expanduser("~") #Save files path
 # Event Markers
 MARKERS = {
     "session_start":    100,
@@ -75,7 +98,7 @@ GRAZ_B_DEFAULTS = {
     "rest_s":       3.0,
     "pause_s":      5.0,
     "trials_per_block": 10,
-    "blocks":       2,   # 2 blocos (1 esquerda + 1 direita = 1 run)
+    "blocks":       2,   # 2 blocks (1 left + 1 right = 1 run)
 }
 
 # Protocol: 3 class MI
@@ -161,7 +184,7 @@ class BCIApp:
         self.root.minsize(780, 700)
         self.root.resizable(True, True)
 
-        # Estado
+        # State
         self.board = None
         self.is_connected = False
         self.is_collecting = False
@@ -170,7 +193,7 @@ class BCIApp:
         self.data_queue = queue.Queue()
         self.all_data = []
 
-        # Variáveis de controle
+        # Control variables
         self.var_port = tk.StringVar(value="COM8")
         self.var_name = tk.StringVar(value="")
         self.var_session = tk.StringVar(value="1")
@@ -294,17 +317,17 @@ class BCIApp:
         row1 = tk.Frame(sec, bg=THEME["surface"])
         row1.pack(fill="x", pady=(0, 6))
 
-        self._make_label(row1, "Porta Serial:").pack(side="left")
+        self._make_label(row1, "Serial Port:").pack(side="left")
         self._make_entry(row1, self.var_port, width=10).pack(side="left", padx=(6, 12))
 
         self.chk_synthetic = tk.Checkbutton(
-            row1, text="Modo Sintético (sem placa)", variable=self.var_synthetic,
+            row1, text="Synthetic Mode (no board)", variable=self.var_synthetic,
             font=("Segoe UI", 8), fg=THEME["text_muted"], bg=THEME["surface"],
             selectcolor=THEME["surface2"], activebackground=THEME["surface"],
             activeforeground=THEME["text_muted"])
         self.chk_synthetic.pack(side="left", padx=(0, 12))
 
-        self.btn_connect = self._make_button(row1, "Conectar", self._toggle_connection, "accent")
+        self.btn_connect = self._make_button(row1, "Connect", self._toggle_connection, "accent")
         self.btn_connect.pack(side="left", padx=(0, 6))
 
         self.btn_sanity = self._make_button(row1, "Sanity Check", self._sanity_check, "normal")
@@ -319,37 +342,37 @@ class BCIApp:
         self.hw_status_dot.pack(side="left", padx=(0, 6))
         self.hw_status_dot.create_oval(1, 1, 9, 9, fill=THEME["red"], outline="")
 
-        self.hw_status_label = self._make_label(row2, "Desconectado",
+        self.hw_status_label = self._make_label(row2, "Disconnected",
                                                  fg=THEME["text_muted"])
         self.hw_status_label.pack(side="left")
 
     def _build_subject_section(self, parent):
-        sec = self._make_section(parent, "SUJEITO")
+        sec = self._make_section(parent, "SUBJECT")
 
         row1 = tk.Frame(sec, bg=THEME["surface"])
         row1.pack(fill="x", pady=(0, 6))
 
-        self._make_label(row1, "Nome:").pack(side="left")
+        self._make_label(row1, "Name:").pack(side="left")
         self._make_entry(row1, self.var_name, width=22).pack(side="left", padx=(6, 16))
-        self._make_label(row1, "Sessão:").pack(side="left")
+        self._make_label(row1, "Session:").pack(side="left")
         self._make_entry(row1, self.var_session, width=5).pack(side="left", padx=(6, 0))
 
         row2 = tk.Frame(sec, bg=THEME["surface"])
         row2.pack(fill="x")
 
-        self._make_label(row2, "Salvar em:").pack(side="left")
+        self._make_label(row2, "Save to:").pack(side="left")
         self._make_entry(row2, self.var_save_path, width=48).pack(side="left", padx=(6, 6))
         self._make_button(row2, "...", self._browse_path).pack(side="left")
 
     def _build_protocol_section(self, parent):
-        sec = self._make_section(parent, "PROTOCOLO")
+        sec = self._make_section(parent, "PROTOCOL")
 
         # Radio buttons
         radio_frame = tk.Frame(sec, bg=THEME["surface"])
         radio_frame.pack(fill="x", pady=(0, 8))
 
-        for val, label in [("graz_b", "Graz B — Imaginação Motora (mão esquerda vs direita)"),
-                           ("movement", "Movement — 3 tipos de movimento (10s cada)")]:
+        for val, label in [("graz_b", "Graz B — Motor Imagery (left vs. right hand)"),
+                           ("movement", "Movement — 3 movement types (10s each)")]:
             rb = tk.Radiobutton(radio_frame, text=label, variable=self.var_protocol,
                                 value=val, font=("Segoe UI", 9), fg=THEME["text"],
                                 bg=THEME["surface"], selectcolor=THEME["surface2"],
@@ -389,7 +412,7 @@ class BCIApp:
                              font=("Segoe UI", 8)).pack(side="left")
 
     def _build_graz_params(self, parent):
-        tk.Label(parent, text="Parâmetros Graz B", font=("Segoe UI", 9, "bold"),
+        tk.Label(parent, text="Graz B Parameters", font=("Segoe UI", 9, "bold"),
                  fg=THEME["yellow"], bg=THEME["surface"]).pack(anchor="w", pady=(0, 6))
 
         grid = tk.Frame(parent, bg=THEME["surface"])
@@ -400,21 +423,21 @@ class BCIApp:
         right = tk.Frame(grid, bg=THEME["surface"])
         right.pack(side="left", fill="x", expand=True)
 
-        self._param_row(left, "Trials por bloco:", self.var_graz_trials)
-        self._param_row(left, "Imaginação:", self.var_graz_imagery_s, "s")
-        self._param_row(right, "Repouso:", self.var_graz_rest_s, "s")
-        self._param_row(right, "Pausa entre blocos:", self.var_graz_pause_s, "s")
+        self._param_row(left, "Trials per block:", self.var_graz_trials)
+        self._param_row(left, "Imagery:", self.var_graz_imagery_s, "s")
+        self._param_row(right, "Rest:", self.var_graz_rest_s, "s")
+        self._param_row(right, "Pause between blocks:", self.var_graz_pause_s, "s")
 
         # Info
         info = tk.Label(parent, font=("Segoe UI", 8), fg=THEME["text_muted"],
                         bg=THEME["surface"], justify="left",
-                        text="Sequência: Fixação (2s) → Beep (1s) → Imaginação → Repouso\n"
-                             "Blocos: Esquerda → Pausa → Direita → Pausa\n"
-                             "Marcadores e dados de repouso são gravados continuamente.")
+                        text="Sequence: Fixation (2s) → Beep (1s) → Imagery → Rest\n"
+                             "Blocks: Left → Pause → Right → Pause\n"
+                             "Markers and rest data are recorded continuously.")
         info.pack(anchor="w", pady=(8, 0))
 
     def _build_movement_params(self, parent):
-        tk.Label(parent, text="Parâmetros Movement Protocol", font=("Segoe UI", 9, "bold"),
+        tk.Label(parent, text="Movement Protocol Parameters", font=("Segoe UI", 9, "bold"),
                  fg=THEME["orange"], bg=THEME["surface"]).pack(anchor="w", pady=(0, 6))
 
         grid = tk.Frame(parent, bg=THEME["surface"])
@@ -425,28 +448,28 @@ class BCIApp:
         right = tk.Frame(grid, bg=THEME["surface"])
         right.pack(side="left", fill="x", expand=True)
 
-        self._param_row(left, "Trials por bloco:", self.var_mov_trials)
-        self._param_row(left, "Duração movimento:", self.var_mov_duration_s, "s")
-        self._param_row(right, "Repouso:", self.var_mov_rest_s, "s")
+        self._param_row(left, "Trials per block:", self.var_mov_trials)
+        self._param_row(left, "Movement duration:", self.var_mov_duration_s, "s")
+        self._param_row(right, "Rest:", self.var_mov_rest_s, "s")
 
         info = tk.Label(parent, font=("Segoe UI", 8), fg=THEME["text_muted"],
                         bg=THEME["surface"], justify="left",
-                        text="Mov 1: Abrir e fechar a mão\n"
-                             "Mov 2: Esticar o braço (cotovelo)\n"
-                             "Mov 3: Levantar/abaixar o braço (ombro)\n"
-                             "Cada bloco = 1 tipo de movimento, com pausa entre blocos.")
+                        text="Mov 1: Open and close the hand\n"
+                             "Mov 2: Extend the arm (elbow)\n"
+                             "Mov 3: Raise/lower the arm (shoulder)\n"
+                             "Each block = 1 movement type, with a pause between blocks.")
         info.pack(anchor="w", pady=(8, 0))
 
     def _build_viz_options(self, parent):
-        sec = self._make_section(parent, "VISUALIZAÇÃO EM TEMPO REAL")
+        sec = self._make_section(parent, "REAL-TIME VISUALIZATION")
 
         opts_frame = tk.Frame(sec, bg=THEME["surface"])
         opts_frame.pack(fill="x")
 
         for var, label in [
-            (self.var_show_power, "Potência média por canal (bandas)"),
-            (self.var_show_concentration, "Barra de concentração (BrainFlow Metrics)"),
-            (self.var_show_signal_quality, "Indicador de qualidade de sinal"),
+            (self.var_show_power, "Mean power per channel (bands)"),
+            (self.var_show_concentration, "Concentration bar (BrainFlow Metrics)"),
+            (self.var_show_signal_quality, "Signal quality indicator"),
         ]:
             cb = tk.Checkbutton(opts_frame, text=label, variable=var,
                                 font=("Segoe UI", 9), fg=THEME["text"],
@@ -458,16 +481,16 @@ class BCIApp:
         frame = tk.Frame(parent, bg=THEME["bg"])
         frame.pack(fill="x", pady=(5, 10))
 
-        self.btn_start = self._make_button(frame, "▶  INICIAR COLETA",
+        self.btn_start = self._make_button(frame, "▶  START COLLECTION",
                                             self._start_collection, "green")
         self.btn_start.pack(fill="x", ipady=8)
 
         row2 = tk.Frame(frame, bg=THEME["bg"])
         row2.pack(fill="x", pady=(8, 0))
 
-        self._make_button(row2, "  Abrir Pasta de Dados",
+        self._make_button(row2, "  Open Data Folder",
                           self._open_data_folder).pack(side="left", fill="x", expand=True, padx=(0, 4))
-        self._make_button(row2, "  Análise Rápida",
+        self._make_button(row2, "  Quick Analysis",
                           self._quick_analysis).pack(side="left", fill="x", expand=True, padx=(4, 0))
 
     def _build_status_bar(self):
@@ -475,7 +498,7 @@ class BCIApp:
         bar.pack(side="bottom", fill="x")
         bar.pack_propagate(False)
 
-        self.status_label = tk.Label(bar, text="Pronto",
+        self.status_label = tk.Label(bar, text="Ready",
                                       font=("Segoe UI", 8), fg=THEME["text_muted"],
                                       bg=THEME["surface2"])
         self.status_label.pack(side="left", padx=12)
@@ -499,13 +522,13 @@ class BCIApp:
 
     def _connect(self):
         try:
-            self._set_status("Conectando...", THEME["yellow"])
+            self._set_status("Connecting...", THEME["yellow"])
 
             params = BrainFlowInputParams()
 
             if self.var_synthetic.get():
                 board_id = BoardIds.SYNTHETIC_BOARD
-                self._set_status("Modo sintético ativado", THEME["yellow"])
+                self._set_status("Synthetic mode enabled", THEME["yellow"])
             else:
                 board_id = BoardIds.CYTON_BOARD
                 params.serial_port = self.var_port.get()
@@ -519,25 +542,25 @@ class BCIApp:
             self.is_connected = True
             self.board_id = board_id
 
-            # Fator de escala: Cyton retorna ADC counts, sintético já retorna µV
+            # Scale factor: Cyton returns ADC counts; the synthetic board already returns µV
             self.scale_uv = CYTON_SCALE_UV if board_id == BoardIds.CYTON_BOARD else 1.0
 
             self.hw_status_dot.delete("all")
             self.hw_status_dot.create_oval(1, 1, 9, 9, fill=THEME["green"], outline="")
-            self.hw_status_label.config(text="Conectado", fg=THEME["green"])
-            self.btn_connect.config(text="Desconectar", bg=THEME["red_dim"],
+            self.hw_status_label.config(text="Connected", fg=THEME["green"])
+            self.btn_connect.config(text="Disconnect", bg=THEME["red_dim"],
                                      fg=THEME["red"])
 
-            board_name = "Sintético" if self.var_synthetic.get() else f"Cyton ({self.var_port.get()})"
-            self._set_status(f"Conectado: {board_name}", THEME["green"])
+            board_name = "Synthetic" if self.var_synthetic.get() else f"Cyton ({self.var_port.get()})"
+            self._set_status(f"Connected: {board_name}", THEME["green"])
             play_success()
 
         except Exception as e:
             self.is_connected = False
             self.hw_status_dot.delete("all")
             self.hw_status_dot.create_oval(1, 1, 9, 9, fill=THEME["red"], outline="")
-            self.hw_status_label.config(text=f"Erro: {str(e)[:60]}", fg=THEME["red"])
-            self._set_status(f"Erro de conexão: {str(e)[:80]}", THEME["red"])
+            self.hw_status_label.config(text=f"Error: {str(e)[:60]}", fg=THEME["red"])
+            self._set_status(f"Connection error: {str(e)[:80]}", THEME["red"])
             play_error()
 
     def _disconnect(self):
@@ -554,68 +577,68 @@ class BCIApp:
 
             self.hw_status_dot.delete("all")
             self.hw_status_dot.create_oval(1, 1, 9, 9, fill=THEME["red"], outline="")
-            self.hw_status_label.config(text="Desconectado", fg=THEME["text_muted"])
-            self.btn_connect.config(text="Conectar", bg=THEME["accent_dim"],
+            self.hw_status_label.config(text="Disconnected", fg=THEME["text_muted"])
+            self.btn_connect.config(text="Connect", bg=THEME["accent_dim"],
                                      fg=THEME["accent"])
-            self._set_status("Desconectado")
+            self._set_status("Disconnected")
 
         except Exception as e:
-            self._set_status(f"Erro ao desconectar: {e}", THEME["red"])
+            self._set_status(f"Error while disconnecting: {e}", THEME["red"])
 
     def _sanity_check(self):
         if not self.is_connected:
-            messagebox.showwarning("Sanity Check", "Conecte a placa primeiro.")
+            messagebox.showwarning("Sanity Check", "Connect the board first.")
             return
 
-        self._set_status("Sanity Check com visualização ao vivo...", THEME["yellow"])
+        self._set_status("Sanity Check with live visualization...", THEME["yellow"])
 
         try:
             self.board.start_stream()
         except Exception as e:
-            self._set_status(f"Sanity Check falhou: {e}", THEME["red"])
-            messagebox.showerror("Erro", f"Falha ao iniciar stream:\n{e}")
+            self._set_status(f"Sanity Check failed: {e}", THEME["red"])
+            messagebox.showerror("Error", f"Failed to start stream:\n{e}")
             return
 
-        # ── Janela de Sanity Check com sinais ao vivo ──
+        # -- Sanity-check window with live signals --
         sc_win = tk.Toplevel(self.root)
-        sc_win.title("Sanity Check — Visualização ao Vivo")
+        sc_win.title("Sanity Check — Live Visualization")
         sc_win.geometry("1100x700")
         sc_win.configure(bg=THEME["bg"])
 
         eeg_channels = BoardShim.get_eeg_channels(self.board_id)
         sr = BoardShim.get_sampling_rate(self.board_id)
         n_ch = min(len(eeg_channels), 8)
-        buf_sec = 4  # Segundos visíveis
+        buf_sec = 4  # Visible seconds
         buf_len = int(sr * buf_sec)
 
-        # Buffer circular para cada canal
+        # Circular buffer for each channel
         signal_bufs = [np.zeros(buf_len) for _ in range(n_ch)]
 
-        # ── Layout: sinais à esquerda, relatório à direita ──
+        # -- Layout: signals on the left, report on the right --
         content = tk.Frame(sc_win, bg=THEME["bg"])
         content.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Canvas para sinais (osciloscópio)
+        # Canvas for signals (oscilloscope)
         sig_frame = tk.Frame(content, bg=THEME["surface"], highlightbackground=THEME["border"],
                              highlightthickness=1)
         sig_frame.pack(side="left", fill="both", expand=True, padx=(0, 8))
 
-        tk.Label(sig_frame, text="📡  SINAIS AO VIVO", font=("Segoe UI", 10, "bold"),
+        tk.Label(sig_frame, text="📡  LIVE SIGNALS", font=("Segoe UI", 10, "bold"),
                  fg=THEME["accent"], bg=THEME["surface"]).pack(anchor="w", padx=12, pady=(8, 4))
 
         sig_canvas = tk.Canvas(sig_frame, bg=THEME["surface2"], highlightthickness=0)
         sig_canvas.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
-        # Painel de qualidade à direita
+        # Quality panel on the right
         right_panel = tk.Frame(content, bg=THEME["surface"], width=300,
                                highlightbackground=THEME["border"], highlightthickness=1)
         right_panel.pack(side="right", fill="y")
         right_panel.pack_propagate(False)
 
-        tk.Label(right_panel, text="QUALIDADE DOS CANAIS", font=("Segoe UI", 10, "bold"),
+        tk.Label(right_panel, text="CHANNEL QUALITY", font=("Segoe UI", 10, "bold"),
                  fg=THEME["accent"], bg=THEME["surface"]).pack(anchor="w", padx=12, pady=(8, 8))
 
-        # Labels de status por canal
+        # Per-channel status labels
         ch_status_frames = []
         for i in range(n_ch):
             name = CHANNEL_NAMES[i] if i < len(CHANNEL_NAMES) else f"CH{i+1}"
@@ -641,9 +664,9 @@ class BCIApp:
 
             ch_status_frames.append({'dot': dot, 'info': info, 'status': status_lbl})
 
-        # Resultado geral
+        # Overall result
         tk.Frame(right_panel, bg=THEME["border"], height=1).pack(fill="x", padx=12, pady=10)
-        result_label = tk.Label(right_panel, text="Analisando...", font=("Segoe UI", 11, "bold"),
+        result_label = tk.Label(right_panel, text="Analyzing...", font=("Segoe UI", 11, "bold"),
                                 fg=THEME["yellow"], bg=THEME["surface"])
         result_label.pack(padx=12)
 
@@ -651,7 +674,7 @@ class BCIApp:
                               font=("Segoe UI", 8), fg=THEME["text_muted"], bg=THEME["surface"])
         info_label.pack(padx=12, pady=(4, 8))
 
-        # Botões
+        # Buttons
         btn_frame = tk.Frame(right_panel, bg=THEME["surface"])
         btn_frame.pack(fill="x", padx=12, pady=(8, 12), side="bottom")
 
@@ -663,10 +686,10 @@ class BCIApp:
                 self.board.stop_stream()
             except:
                 pass
-            self._set_status("Sanity Check finalizado", THEME["green"])
-            stop_btn.config(state="disabled", text="Parado")
+            self._set_status("Sanity Check finished", THEME["green"])
+            stop_btn.config(state="disabled", text="Stopped")
 
-        stop_btn = self._make_button(btn_frame, "Parar & Fechar", lambda: (_stop_sc(), sc_win.after(300, sc_win.destroy)), "red")
+        stop_btn = self._make_button(btn_frame, "Stop & Close", lambda: (_stop_sc(), sc_win.after(300, sc_win.destroy)), "red")
         stop_btn.pack(fill="x")
 
         def _on_close():
@@ -676,13 +699,13 @@ class BCIApp:
 
         sc_win.protocol("WM_DELETE_WINDOW", _on_close)
 
-        # ── Loop de atualização em tempo real ──
+        # -- Real-time update loop --
         def _update_live():
             if not sc_running[0]:
                 return
 
             try:
-                data = self.board.get_current_board_data(int(sr * 0.15))  # ~150ms de dados novos
+                data = self.board.get_current_board_data(int(sr * 0.15))  # ~150 ms of new data
                 n_new = data.shape[1]
 
                 if n_new > 0:
@@ -692,7 +715,7 @@ class BCIApp:
                         signal_bufs[i] = np.roll(signal_bufs[i], -n_new)
                         signal_bufs[i][-n_new:] = new_samples
 
-                # ── Desenhar sinais no canvas ──
+                # -- Draw signals on the canvas --
                 sig_canvas.delete("all")
                 cw = sig_canvas.winfo_width()
                 ch_h = sig_canvas.winfo_height()
@@ -707,23 +730,23 @@ class BCIApp:
                     color = CHANNEL_COLORS[i % len(CHANNEL_COLORS)]
                     name = CHANNEL_NAMES[i] if i < len(CHANNEL_NAMES) else f"CH{i+1}"
 
-                    # Separador
+                    # Separator
                     if i > 0:
                         sig_canvas.create_line(0, track_h * i, cw, track_h * i,
                                                fill=THEME["border"], width=1)
 
-                    # Label do canal
+                    # Channel label
                     sig_canvas.create_text(6, y_center - track_h * 0.35, text=name,
                                            fill=color, font=("Consolas", 8, "bold"), anchor="w")
 
-                    # Sinal — remover DC offset para visualização
+                    # Signal -- remove DC offset for display
                     sig = signal_bufs[i]
                     sig_ac = sig - np.mean(sig)  # Remove DC offset
                     std = np.std(sig_ac)
                     if std < 0.01:
                         std = 1.0
 
-                    # Escalar sinal para caber na track (ajustado para µV)
+                    # Scale signal to fit the track (adjusted for µV)
                     scale = (track_h * 0.4) / (std * 2.5 + 1e-6)
                     points = []
                     step = max(1, buf_len // cw)
@@ -736,7 +759,7 @@ class BCIApp:
                     if len(points) >= 4:
                         sig_canvas.create_line(points, fill=color, width=1, smooth=False)
 
-                    # ── Atualizar qualidade (valores já em µV) ──
+                    # -- Update quality (values already in µV) --
                     mean_v = np.mean(sig[-int(sr):]) if len(sig) >= sr else np.mean(sig)
                     std_v = np.std(sig[-int(sr):]) if len(sig) >= sr else std
                     unique_ratio = len(np.unique(np.round(sig[-int(sr):], 2))) / max(int(sr), 1)
@@ -746,8 +769,8 @@ class BCIApp:
 
                     if is_railed or is_flat:
                         status, s_color = "RAILED", THEME["red"]
-                    elif std_v > 150:  # > 150 µV = muito ruído
-                        status, s_color = "RUÍDO", THEME["yellow"]
+                    elif std_v > 150:  # > 150 µV = very noisy
+                        status, s_color = "NOISE", THEME["yellow"]
                     else:
                         status, s_color = "OK", THEME["green"]
 
@@ -756,12 +779,12 @@ class BCIApp:
                     ch_status_frames[i]['info'].config(text=f"µ={mean_v:.1f} σ={std_v:.1f}")
                     ch_status_frames[i]['status'].config(text=status, fg=s_color)
 
-                # Checar resultado geral
+                # Check overall result
                 all_ok = all(ch_status_frames[i]['status'].cget("text") == "OK" for i in range(n_ch))
                 if all_ok:
-                    result_label.config(text="✓ TODOS OK", fg=THEME["green"])
+                    result_label.config(text="✓ ALL OK", fg=THEME["green"])
                 else:
-                    result_label.config(text="⚠ VERIFICAR CANAIS", fg=THEME["yellow"])
+                    result_label.config(text="⚠ CHECK CHANNELS", fg=THEME["yellow"])
 
             except Exception:
                 pass
@@ -769,20 +792,20 @@ class BCIApp:
             if sc_running[0]:
                 sc_win.after(80, _update_live)  # ~12 FPS
 
-        # Início do loop
+        # Start of the loop
         sc_win.after(500, _update_live)
 
     # Data aquisition
 
     def _validate_before_start(self):
         if not self.is_connected:
-            messagebox.showwarning("Aviso", "Conecte a placa primeiro.")
+            messagebox.showwarning("Warning", "Connect the board first.")
             return False
         if not self.var_name.get().strip():
-            messagebox.showwarning("Aviso", "Digite o nome do sujeito.")
+            messagebox.showwarning("Warning", "Enter the subject name.")
             return False
         if not os.path.isdir(self.var_save_path.get()):
-            messagebox.showwarning("Aviso", "O caminho de salvamento não existe.")
+            messagebox.showwarning("Warning", "The save path does not exist.")
             return False
         return True
 
@@ -798,11 +821,11 @@ class BCIApp:
         self.stop_event.clear()
         self.all_data = []
 
-        self.btn_start.config(text="PARAR COLETA", bg=THEME["red_dim"], fg=THEME["red"])
+        self.btn_start.config(text="STOP COLLECTION", bg=THEME["red_dim"], fg=THEME["red"])
 
         protocol = self.var_protocol.get()
 
-        # Abrir janela de coleta
+        # Open the collection window
         self.collection_window = CollectionWindow(
             self.root, self, protocol,
             show_power=self.var_show_power.get(),
@@ -813,22 +836,22 @@ class BCIApp:
     def _abort_collection(self):
         self.stop_event.set()
         self.is_collecting = False
-        self.btn_start.config(text="▶  INICIAR COLETA", bg=THEME["green_dim"], fg=THEME["green"])
-        self._set_status("Coleta abortada", THEME["yellow"])
+        self.btn_start.config(text="▶  START COLLECTION", bg=THEME["green_dim"], fg=THEME["green"])
+        self._set_status("Collection aborted", THEME["yellow"])
 
     def _finish_collection(self):
         self.is_collecting = False
-        self.btn_start.config(text="▶  INICIAR COLETA", bg=THEME["green_dim"], fg=THEME["green"])
+        self.btn_start.config(text="▶  START COLLECTION", bg=THEME["green_dim"], fg=THEME["green"])
 
     def _save_data(self, all_data):
         if all_data is None or len(all_data) == 0:
-            self._set_status("Nenhum dado para salvar", THEME["yellow"])
+            self._set_status("No data to save", THEME["yellow"])
             return None
 
         try:
             data_matrix = np.hstack(all_data) if len(all_data) > 1 else all_data[0]
         except Exception:
-            self._set_status("Erro ao concatenar dados", THEME["red"])
+            self._set_status("Error concatenating data", THEME["red"])
             return None
 
         eeg_channels = BoardShim.get_eeg_channels(self.board_id)
@@ -836,27 +859,27 @@ class BCIApp:
         marker_ch = BoardShim.get_marker_channel(self.board_id)
         accel_channels = BoardShim.get_accel_channels(self.board_id)
 
-        # Montar DataFrame
+        # Build the DataFrame
         columns = {}
 
         # Timestamp
         columns["Timestamp"] = data_matrix[timestamp_ch]
 
-        # Canais EEG
+        # EEG channels
         for idx, ch in enumerate(eeg_channels):
             name = CHANNEL_NAMES[idx] if idx < len(CHANNEL_NAMES) else f"EEG_CH{idx+1}"
             columns[name] = data_matrix[ch]
 
-        # Acelerometro
+        # Accelerometer
         for idx, ch in enumerate(accel_channels):
             columns[f"Accel_{'XYZ'[idx] if idx < 3 else str(idx)}"] = data_matrix[ch]
 
-        # Marcador
+        # Marker
         columns["Marker"] = data_matrix[marker_ch]
 
         df = pd.DataFrame(columns)
 
-        # Nome do arquivo
+        # File name
         subject = self.var_name.get().strip().replace(" ", "_")
         session = self.var_session.get().strip()
         protocol = self.var_protocol.get()
@@ -865,7 +888,7 @@ class BCIApp:
 
         filepath = os.path.join(self.var_save_path.get(), filename)
 
-        # Adicionar header com metadados
+        # Add a metadata header
         meta_lines = [
             f"# BCI-IM Collection Suite v{VERSION}",
             f"# Subject: {self.var_name.get().strip()}",
@@ -885,7 +908,7 @@ class BCIApp:
 
         df.to_csv(filepath, mode="a", index=False)
 
-        self._set_status(f"Dados salvos: {filename}", THEME["green"])
+        self._set_status(f"Data saved: {filename}", THEME["green"])
         play_success()
         return filepath
 
@@ -901,23 +924,23 @@ class BCIApp:
         if os.path.isdir(path):
             os.startfile(path)
         else:
-            messagebox.showwarning("Aviso", "Pasta não encontrada.")
+            messagebox.showwarning("Warning", "Folder not found.")
 
     def _quick_analysis(self):
         filepath = filedialog.askopenfilename(
             initialdir=self.var_save_path.get(),
             filetypes=[("CSV", "*.csv")],
-            title="Selecione um arquivo de coleta"
+            title="Select a collection file"
         )
         if not filepath:
             return
 
         try:
-            # Pular linhas de metadados (começam com #)
+            # Skip metadata lines (they start with #)
             df = pd.read_csv(filepath, comment="#")
 
             win = tk.Toplevel(self.root)
-            win.title(f"Análise Rápida — {os.path.basename(filepath)}")
+            win.title(f"Quick Analysis — {os.path.basename(filepath)}")
             win.geometry("700x520")
             win.configure(bg=THEME["bg"])
 
@@ -927,24 +950,24 @@ class BCIApp:
             eeg_cols = [c for c in df.columns if c in CHANNEL_NAMES]
             marker_col = "Marker" if "Marker" in df.columns else None
 
-            # Info geral
+            # General info
             sr = 250  # Assume Cyton
             n_samples = len(df)
             duration = n_samples / sr
             y_offset = 20
 
             canvas.create_text(20, y_offset, anchor="nw",
-                text=f"Arquivo: {os.path.basename(filepath)}",
+                text=f"File: {os.path.basename(filepath)}",
                 fill=THEME["accent"], font=("Consolas", 10, "bold"))
             y_offset += 22
             canvas.create_text(20, y_offset, anchor="nw",
-                text=f"Duração: {duration:.1f}s  |  Amostras: {n_samples}  |  Canais: {len(eeg_cols)}",
+                text=f"Duration: {duration:.1f}s  |  Samples: {n_samples}  |  Channels: {len(eeg_cols)}",
                 fill=THEME["text"], font=("Consolas", 9))
             y_offset += 30
 
-            # Estatísticas por canal
+            # Per-channel statistics
             canvas.create_text(20, y_offset, anchor="nw",
-                text=f"{'Canal':<8}  {'Média (µV)':<14}  {'Std (µV)':<14}  {'Min':<12}  {'Max':<12}",
+                text=f"{'Channel':<8}  {'Mean (µV)':<14}  {'Std (µV)':<14}  {'Min':<12}  {'Max':<12}",
                 fill=THEME["text_muted"], font=("Consolas", 9, "bold"))
             y_offset += 18
 
@@ -957,11 +980,11 @@ class BCIApp:
                     fill=color, font=("Consolas", 9))
                 y_offset += 17
 
-            # Contagem de marcadores
+            # Marker counts
             if marker_col:
                 y_offset += 15
                 canvas.create_text(20, y_offset, anchor="nw",
-                    text="Marcadores encontrados:",
+                    text="Markers found:",
                     fill=THEME["yellow"], font=("Consolas", 10, "bold"))
                 y_offset += 20
 
@@ -976,10 +999,10 @@ class BCIApp:
                         fill=THEME["text"], font=("Consolas", 9))
                     y_offset += 16
 
-            self._make_button(win, "Fechar", win.destroy).pack(pady=8)
+            self._make_button(win, "Close", win.destroy).pack(pady=8)
 
         except Exception as e:
-            messagebox.showerror("Erro", f"Erro ao analisar:\n{e}")
+            messagebox.showerror("Error", f"Error during analysis:\n{e}")
 
     def run(self):
         self.root.mainloop()
@@ -997,7 +1020,7 @@ class CollectionWindow:
         self.show_signal_quality = show_signal_quality
 
         self.win = tk.Toplevel(parent)
-        self.win.title("Coleta em Andamento")
+        self.win.title("Collection in Progress")
         self.win.configure(bg=THEME["bg"])
         self.win.attributes("-fullscreen", True)
         self.win.bind("<Escape>", lambda e: self._abort())
@@ -1066,7 +1089,7 @@ class CollectionWindow:
         bottom.pack(fill="x", side="bottom")
         bottom.pack_propagate(False)
 
-        self.info_label = tk.Label(bottom, text="Pressione ESC para abortar | F11 para tela cheia",
+        self.info_label = tk.Label(bottom, text="Press ESC to abort | F11 for fullscreen",
                                     font=("Segoe UI", 8), fg=THEME["text_muted"],
                                     bg=THEME["surface2"])
         self.info_label.pack(side="left", padx=12)
@@ -1077,20 +1100,20 @@ class CollectionWindow:
         self.rec_label.pack(side="right", padx=12)
 
     def _build_side_panel(self):
-        tk.Label(self.side_panel, text="MONITORAMENTO",
+        tk.Label(self.side_panel, text="MONITORING",
                  font=("Segoe UI", 8, "bold"), fg=THEME["accent"],
                  bg=THEME["surface"]).pack(anchor="w", padx=12, pady=(12, 8))
 
         if self.show_signal_quality:
-            tk.Label(self.side_panel, text="Qualidade do Sinal",
+            tk.Label(self.side_panel, text="Signal Quality",
                      font=("Segoe UI", 8), fg=THEME["text_muted"],
                      bg=THEME["surface"]).pack(anchor="w", padx=12)
             self.quality_canvas = tk.Canvas(self.side_panel, height=40,
                                              bg=THEME["surface"], highlightthickness=0)
             self.quality_canvas.pack(fill="x", padx=12, pady=(2, 10))
 
-        # Sinais
-        tk.Label(self.side_panel, text="Sinais EEG ao Vivo",
+        # Signals
+        tk.Label(self.side_panel, text="Live EEG Signals",
                  font=("Segoe UI", 8), fg=THEME["text_muted"],
                  bg=THEME["surface"]).pack(anchor="w", padx=12)
         self.live_sig_canvas = tk.Canvas(self.side_panel, height=220,
@@ -1099,7 +1122,7 @@ class CollectionWindow:
         self.sig_bufs = None  # Initialized on first update
 
         if self.show_power:
-            tk.Label(self.side_panel, text="Potência por Banda (µV²)",
+            tk.Label(self.side_panel, text="Power per Band (µV²)",
                      font=("Segoe UI", 8), fg=THEME["text_muted"],
                      bg=THEME["surface"]).pack(anchor="w", padx=12)
             self.power_canvas = tk.Canvas(self.side_panel, height=200,
@@ -1107,7 +1130,7 @@ class CollectionWindow:
             self.power_canvas.pack(fill="x", padx=12, pady=(2, 10))
 
         if self.show_concentration:
-            tk.Label(self.side_panel, text="Nível de Concentração",
+            tk.Label(self.side_panel, text="Concentration Level",
                      font=("Segoe UI", 8), fg=THEME["text_muted"],
                      bg=THEME["surface"]).pack(anchor="w", padx=12)
             self.conc_canvas = tk.Canvas(self.side_panel, height=35,
@@ -1123,7 +1146,7 @@ class CollectionWindow:
                                      fill=THEME["text"], width=4)
         self.cue_canvas.create_line(cx - 50, cy, cx + 50, cy,
                                      fill=THEME["text"], width=4)
-        self.phase_label.config(text="Fixação", fg=THEME["text_muted"])
+        self.phase_label.config(text="Fixation", fg=THEME["text_muted"])
 
     def _show_arrow(self, direction):
         self.cue_canvas.delete("all")
@@ -1134,13 +1157,13 @@ class CollectionWindow:
                    cx + 80, cy - 20, cx + 80, cy + 20, cx + 40, cy + 20,
                    cx + 40, cy + 50]
             self.cue_canvas.create_polygon(pts, fill=THEME["red"], outline="")
-            self.phase_label.config(text="← MÃO ESQUERDA", fg=THEME["red"])
+            self.phase_label.config(text="← LEFT HAND", fg=THEME["red"])
         else:
             pts = [cx + 80, cy, cx - 40, cy - 50, cx - 40, cy - 20,
                    cx - 80, cy - 20, cx - 80, cy + 20, cx - 40, cy + 20,
                    cx - 40, cy + 50]
             self.cue_canvas.create_polygon(pts, fill=THEME["accent"], outline="")
-            self.phase_label.config(text="MÃO DIREITA →", fg=THEME["accent"])
+            self.phase_label.config(text="RIGHT HAND →", fg=THEME["accent"])
 
     def _show_movement_cue(self, movement_type):
         self.cue_canvas.delete("all")
@@ -1150,42 +1173,42 @@ class CollectionWindow:
             self.cue_canvas.create_text(cx, cy - 30, text="✊ ↔ ✋",
                 font=("Segoe UI", 48), fill=THEME["orange"])
             self.cue_canvas.create_text(cx, cy + 50,
-                text="ABRIR E FECHAR A MÃO",
+                text="OPEN AND CLOSE HAND",
                 font=("Segoe UI", 14, "bold"), fill=THEME["orange"])
 
         elif movement_type == "elbow":
             self.cue_canvas.create_text(cx, cy - 30, text="💪",
                 font=("Segoe UI", 48), fill=THEME["purple"])
             self.cue_canvas.create_text(cx, cy + 50,
-                text="ESTICAR O BRAÇO (COTOVELO)",
+                text="EXTEND THE ARM (ELBOW)",
                 font=("Segoe UI", 14, "bold"), fill=THEME["purple"])
 
         elif movement_type == "shoulder":
             self.cue_canvas.create_text(cx, cy - 30, text="🦾",
                 font=("Segoe UI", 48), fill=THEME["green"])
             self.cue_canvas.create_text(cx, cy + 50,
-                text="LEVANTAR/ABAIXAR O BRAÇO (OMBRO)",
+                text="RAISE/LOWER THE ARM (SHOULDER)",
                 font=("Segoe UI", 14, "bold"), fill=THEME["green"])
 
     def _show_rest(self):
         self.cue_canvas.delete("all")
-        self.cue_canvas.create_text(250, 175, text="Repouso",
+        self.cue_canvas.create_text(250, 175, text="Rest",
             font=("Segoe UI", 24), fill=THEME["text_muted"])
-        self.phase_label.config(text="Período de repouso", fg=THEME["text_muted"])
+        self.phase_label.config(text="Rest period", fg=THEME["text_muted"])
 
     def _show_pause(self):
         self.cue_canvas.delete("all")
-        self.cue_canvas.create_text(250, 155, text="PAUSA",
+        self.cue_canvas.create_text(250, 155, text="PAUSE",
             font=("Segoe UI", 28, "bold"), fill=THEME["yellow"])
-        self.cue_canvas.create_text(250, 200, text="Descanse e aguarde...",
+        self.cue_canvas.create_text(250, 200, text="Rest and wait...",
             font=("Segoe UI", 12), fill=THEME["text_muted"])
-        self.phase_label.config(text="Pausa entre blocos", fg=THEME["yellow"])
+        self.phase_label.config(text="Pause between blocks", fg=THEME["yellow"])
 
     def _show_done(self):
         self.cue_canvas.delete("all")
         self.cue_canvas.create_text(250, 155, text="✓",
             font=("Segoe UI", 56), fill=THEME["green"])
-        self.cue_canvas.create_text(250, 220, text="Coleta Concluída!",
+        self.cue_canvas.create_text(250, 220, text="Collection Complete!",
             font=("Segoe UI", 18, "bold"), fill=THEME["green"])
         self.phase_label.config(text="")
         self.timer_label.config(text="")
@@ -1239,7 +1262,7 @@ class CollectionWindow:
             return
         except Exception as e:
             # Log but don't crash — the viz loop must keep running
-            print(f"[VIZ] Erro na visualização (continuando): {type(e).__name__}: {e}")
+            print(f"[VIZ] Visualization error (continuing): {type(e).__name__}: {e}")
 
         # Always reschedule — the visualization must never silently die
         try:
@@ -1252,11 +1275,11 @@ class CollectionWindow:
         buf_len = int(sr * 1.5)
         scale_uv = self.app.scale_uv if hasattr(self.app, 'scale_uv') else 1.0
 
-        # Inicializar buffers na primeira chamada
+        # Initialize buffers on the first call
         if self.sig_bufs is None:
             self.sig_bufs = [np.zeros(buf_len) for _ in range(n_ch)]
 
-        # Atualizar buffers com dados novos (convertidos para µV)
+        # Update buffers with new data (converted to µV)
         n_new = min(data.shape[1], buf_len)
         for i in range(n_ch):
             ch = eeg_channels[i]
@@ -1277,7 +1300,7 @@ class CollectionWindow:
             color = CHANNEL_COLORS[i % len(CHANNEL_COLORS)]
             name = CHANNEL_NAMES[i] if i < len(CHANNEL_NAMES) else f"C{i+1}"
 
-            # Separador
+            # Separator
             if i > 0:
                 self.live_sig_canvas.create_line(0, int(track_h * i), cw, int(track_h * i),
                                                   fill=THEME["border"], width=1)
@@ -1286,7 +1309,7 @@ class CollectionWindow:
             self.live_sig_canvas.create_text(3, int(y_center - track_h * 0.35), text=name,
                                               fill=color, font=("Consolas", 6, "bold"), anchor="w")
 
-            # Sinal — remover DC offset para visualização
+            # Signal -- remove DC offset for display
             sig = self.sig_bufs[i]
             sig_ac = sig - np.mean(sig)
             std = np.std(sig_ac)
@@ -1316,7 +1339,7 @@ class CollectionWindow:
 
         for i, ch in enumerate(eeg_channels):
             std = np.std(data[ch] * scale_uv)
-            # Classificação em µV
+            # Classification in µV
             if std < 0.5:
                 color = THEME["red"]  # flat/railed
             elif std > 150:
@@ -1348,14 +1371,14 @@ class CollectionWindow:
             if len(ch_data) < 50:
                 continue
 
-            # Calcular potência por banda
+            # Compute power per band
             y_base = i * row_h + 4
             name = CHANNEL_NAMES[i] if i < len(CHANNEL_NAMES) else f"C{i+1}"
             self.power_canvas.create_text(4, y_base + row_h // 2, text=name,
                 fill=CHANNEL_COLORS[i % len(CHANNEL_COLORS)],
                 font=("Consolas", 7), anchor="w")
 
-            # Potência total (simplificado)
+            # Total power (simplified)
             total_power = max(np.std(ch_data), 0.1)
             x_offset = 30
 
@@ -1384,13 +1407,13 @@ class CollectionWindow:
         if w < 10:
             w = 230
 
-        # Estimativa simplificada: razão beta/alpha nos canais frontais
+        # Simplified estimate: beta/alpha ratio over the frontal channels
         sr = BoardShim.get_sampling_rate(self.board_id)
         scale_uv = self.app.scale_uv if hasattr(self.app, 'scale_uv') else 1.0
         alpha_power = 0
         beta_power = 0
 
-        for ch in eeg_channels[:4]:  # Primeiros 4 canais
+        for ch in eeg_channels[:4]:  # First 4 channels
             ch_data = data[ch].copy() * scale_uv
             if len(ch_data) < 50:
                 continue
@@ -1405,9 +1428,9 @@ class CollectionWindow:
                 pass
 
         ratio = beta_power / max(alpha_power, 0.001)
-        level = min(ratio / 3.0, 1.0)  # Normalizar 0-1
+        level = min(ratio / 3.0, 1.0)  # Normalize to 0-1
 
-        # Barra de concentração
+        # Concentration bar
         bar_w = int(level * (w - 20))
         color = THEME["green"] if level > 0.5 else THEME["yellow"] if level > 0.25 else THEME["red"]
 
@@ -1425,11 +1448,11 @@ class CollectionWindow:
             self.board.start_stream()
             self.is_streaming = True
 
-            # Iniciar visualização
+            # Start visualization
             if self.show_power or self.show_concentration or self.show_signal_quality:
                 self.win.after(500, self._start_viz_loop)
 
-            # Iniciar protocolo em thread
+            # Start the protocol in a thread
             if self.protocol == "graz_b":
                 self.collection_thread = threading.Thread(
                     target=self._run_graz_b, daemon=True)
@@ -1440,7 +1463,7 @@ class CollectionWindow:
             self.collection_thread.start()
 
         except Exception as e:
-            messagebox.showerror("Erro", f"Falha ao iniciar streaming:\n{e}")
+            messagebox.showerror("Error", f"Failed to start streaming:\n{e}")
             self._close()
 
     def _wait(self, seconds, show_countdown=True):
@@ -1482,7 +1505,7 @@ class CollectionWindow:
         pause_s = self.app.var_graz_pause_s.get()
         n_trials = self.app.var_graz_trials.get()
 
-        sides = ["esquerda", "direita"]
+        sides = ["left", "right"]
         total_trials = n_trials * len(sides)
         trial_global = 0
         aborted = False
@@ -1495,7 +1518,7 @@ class CollectionWindow:
                 break
 
             self._insert_marker(MARKERS["block_start"])
-            marker_cue = MARKERS["mi_left"] if side == "esquerda" else MARKERS["mi_right"]
+            marker_cue = MARKERS["mi_left"] if side == "left" else MARKERS["mi_right"]
 
             for trial in range(1, n_trials + 1):
                 if self.app.stop_event.is_set():
@@ -1505,11 +1528,11 @@ class CollectionWindow:
                 trial_global += 1
                 self.win.after(0, lambda t=trial, n=n_trials, s=side, tg=trial_global, tt=total_trials:
                     (self.counter_label.config(
-                        text=f"Trial {t}/{n} — Bloco {s.upper()}  |  "
+                        text=f"Trial {t}/{n} — Block {s.upper()}  |  "
                              f"Total: {tg}/{tt}"),
                      self._update_progress(tg, tt)))
 
-                # 1. Fixação
+                # 1. Fixation
                 self.win.after(0, self._show_cross)
                 self._insert_marker(MARKERS["fixation"])
                 if not self._wait(2.0):
@@ -1523,15 +1546,15 @@ class CollectionWindow:
                     aborted = True; break
                 self._collect_chunk()
 
-                # 3. Imaginação motora
+                # 3. Motor imagery
                 self._insert_marker(marker_cue)
-                direction = "left" if side == "esquerda" else "right"
+                direction = "left" if side == "left" else "right"
                 self.win.after(0, lambda d=direction: self._show_arrow(d))
                 if not self._wait(imagery_s):
                     aborted = True; break
                 self._collect_chunk()
 
-                # 4. Repouso (GRAVADO com marcador!)
+                # 4. Rest (RECORDED with a marker!)
                 self._insert_marker(MARKERS["rest_start"])
                 self.win.after(0, self._show_rest)
                 if not self._wait(rest_s):
@@ -1544,7 +1567,7 @@ class CollectionWindow:
             if aborted:
                 break
 
-            # Pausa entre blocos (exceto após o último)
+            # Pause between blocks (except after the last one)
             if block_idx < len(sides) - 1:
                 self._insert_marker(MARKERS["pause_start"])
                 self.win.after(0, self._show_pause)
@@ -1555,13 +1578,13 @@ class CollectionWindow:
                     break
                 self._marker_then_collect(MARKERS["pause_end"])
 
-        # Coleta final — always insert session_end
+        # Final collection -- always insert session_end
         self._insert_marker(MARKERS["session_end"])
         # Wait for Cyton to deliver samples carrying the markers
         time.sleep(1.0)
         self._collect_chunk()
 
-        # Finalizar
+        # Finish
         self.win.after(0, self._finish)
 
     # 3 CLASS MOVEMENT PROTOCOL 
@@ -1573,9 +1596,9 @@ class CollectionWindow:
         n_trials = self.app.var_mov_trials.get()
 
         movements = [
-            ("hand",     "Abrir/Fechar Mão",       MARKERS["mov_hand"]),
-            ("elbow",    "Extensão Cotovelo",       MARKERS["mov_elbow"]),
-            ("shoulder", "Levantar/Abaixar Ombro",  MARKERS["mov_shoulder"]),
+            ("hand",     "Open/Close Hand",         MARKERS["mov_hand"]),
+            ("elbow",    "Elbow Extension",         MARKERS["mov_elbow"]),
+            ("shoulder", "Raise/Lower Shoulder",    MARKERS["mov_shoulder"]),
         ]
 
         total_trials = n_trials * len(movements)
@@ -1603,7 +1626,7 @@ class CollectionWindow:
                              f"Total: {tg}/{tt}"),
                      self._update_progress(tg, tt)))
 
-                # 1. Fixação
+                # 1. Fixation
                 self.win.after(0, self._show_cross)
                 self._insert_marker(MARKERS["fixation"])
                 if not self._wait(2.0):
@@ -1617,14 +1640,14 @@ class CollectionWindow:
                     aborted = True; break
                 self._collect_chunk()
 
-                # 3. Movimento
+                # 3. Movement
                 self._insert_marker(mov_marker)
                 self.win.after(0, lambda mk=mov_key: self._show_movement_cue(mk))
                 if not self._wait(movement_s):
                     aborted = True; break
                 self._collect_chunk()
 
-                # 4. Repouso
+                # 4. Rest
                 self._insert_marker(MARKERS["rest_start"])
                 self.win.after(0, self._show_rest)
                 if not self._wait(rest_s):
@@ -1637,7 +1660,7 @@ class CollectionWindow:
             if aborted:
                 break
 
-            # Pausa entre blocos
+            # Pause between blocks
             if block_idx < len(movements) - 1:
                 self._insert_marker(MARKERS["pause_start"])
                 self.win.after(0, self._show_pause)
@@ -1682,21 +1705,21 @@ class CollectionWindow:
         self.win.after(0, self._show_done)
         play_success()
 
-        # Salvar dados
+        # Save data
         filepath = self.app._save_data(self.all_data)
 
         if filepath:
             self.win.after(0, lambda: self.info_label.config(
-                text=f"Salvo: {os.path.basename(filepath)}   |   Clique para fechar",
+                text=f"Saved: {os.path.basename(filepath)}   |   Click to close",
                 fg=THEME["green"]))
 
-        # Botão de fechar
+        # Close button
         self.win.after(1500, lambda: self._add_close_button())
 
         self.app._finish_collection()
 
     def _add_close_button(self):
-        btn = tk.Button(self.center, text="FECHAR E VOLTAR",
+        btn = tk.Button(self.center, text="CLOSE AND RETURN",
                         command=self._close,
                         font=("Segoe UI", 12, "bold"),
                         bg=THEME["accent_dim"], fg=THEME["accent"],
@@ -1737,7 +1760,7 @@ class CollectionWindow:
         # Save whatever data was collected
         filepath = self.app._save_data(self.all_data)
         if filepath:
-            print(f"[ABORT] Dados parciais salvos: {filepath}")
+            print(f"[ABORT] Partial data saved: {filepath}")
 
         self.app._finish_collection()
         self.win.destroy()
