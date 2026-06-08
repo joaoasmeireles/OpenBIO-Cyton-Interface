@@ -1,9 +1,45 @@
-"""
-BCI-IM Analysis Suite v2.0
-ERD/ERS: Pfurtscheller & Lopes da Silva (1999)
-RQA/STR: Rodrigues et al. (2019), Webber & Zbilut (2005)
-Nonlinear dynamics: Stam (2005), Abasolo et al. (2006)
-Layout: split-pane (controls left, tabbed visualization right)
+"""BCI-IM Analysis Suite.
+
+A Tkinter desktop application for offline analysis and classification of the
+8-channel motor-imagery / executed-movement EEG recorded by the BCI-IM Data
+Collection Suite. It loads the commented CSV files produced during acquisition,
+segments cued trials and rest periods, and runs a configurable feature
+extraction + classification pipeline with leakage-safe, subject/trial-grouped
+cross-validation.
+
+Feature families
+----------------
+* Common Spatial Patterns (CSP) and Filter-Bank CSP (FBCSP).
+* Band power, Hjorth parameters, spectral connectivity (coherence).
+* Nonlinear / complexity features (Lempel-Ziv complexity, Katz fractal
+  dimension, sample entropy, DFA, Hjorth mobility/complexity).
+* Optional Riemannian tangent-space features (if ``pyriemann`` is installed).
+
+Classifiers: LDA, SVM (RBF), Random Forest, and optionally XGBoost.
+
+The interface is a split pane: acquisition/processing controls on the left and
+a tabbed visualization area on the right (raw-signal preview and a "Functional
+Analysis" tab offering ERD/ERS, connectivity, recurrence plots, reconstructed
+attractors, CSP spatial maps, nonlinear-metric summaries and phase-amplitude
+coupling). Batch runs export PSD, ERD/ERS, topographic and summary figures plus
+a results CSV.
+
+Method references
+-----------------
+* ERD/ERS: Pfurtscheller & Lopes da Silva (1999).
+* RQA / STR connectivity: Rodrigues et al. (2019), Webber & Zbilut (2005),
+  Marwan et al. (2007).
+* Nonlinear dynamics: Stam (2005), Abasolo et al. (2006).
+* Phase-amplitude coupling: Tort et al. (2010), Canolty et al. (2006).
+
+Dependencies
+------------
+    pip install numpy pandas scipy scikit-learn matplotlib seaborn
+    # optional: xgboost, pyriemann
+
+Usage
+-----
+    python bci_analysis_suite_v2.py
 """
 # ── Splash screen (instant — only uses tkinter) ─────────────
 import tkinter as _tk_splash
@@ -15,7 +51,7 @@ def _show_splash():
     sx = sp.winfo_screenwidth()//2 - w//2; sy = sp.winfo_screenheight()//2 - h//2
     sp.geometry(f"{w}x{h}+{sx}+{sy}"); sp.configure(bg="#0F1318"); sp.attributes("-topmost", True)
     _tk_splash.Label(sp,text="📊  BCI-IM Analysis Suite v2.0",font=("Segoe UI",14,"bold"),fg="#4FC3F7",bg="#0F1318").pack(pady=(24,4))
-    _lbl=_tk_splash.Label(sp,text="Carregando...",font=("Segoe UI",10),fg="#6B7A94",bg="#0F1318"); _lbl.pack(pady=(0,4))
+    _lbl=_tk_splash.Label(sp,text="Loading...",font=("Segoe UI",10),fg="#6B7A94",bg="#0F1318"); _lbl.pack(pady=(0,4))
     _bar=_tk_splash.Canvas(sp,width=320,height=8,bg="#1A1F28",highlightthickness=0); _bar.pack(pady=(4,0))
     sp.update(); return sp, _lbl, _bar
 
@@ -479,17 +515,17 @@ def run_clf(X,y,g,mnames,cnames,nsp=5,log=None):
     cd={k:v for k,v in get_clfs().items() if k in cnames}; res=[]
     ns=min(nsp,len(np.unique(g)))
     if ns<2:
-        if log: log("[AVISO] Grupos insuficientes.")
+        if log: log("[WARNING] Not enough groups.")
         return res
     # Filter methods: CSP/FB-CSP only work with binary classification
     valid_mnames = []
     for mn in mnames:
         if n_classes > 2 and mn in ('CSP', 'FB-CSP', 'Riemannian'):
-            if log: log(f"  [!] {mn} ignorado (requer 2 classes, encontradas {n_classes})")
+            if log: log(f"  [!] {mn} skipped (requires 2 classes, found {n_classes})")
             continue
         valid_mnames.append(mn)
     if not valid_mnames:
-        if log: log("[AVISO] Nenhum método compatível com multi-classe.")
+        if log: log("[WARNING] No method compatible with multi-class.")
         return res
     gkf=GroupKFold(n_splits=ns)
     for mn in valid_mnames:
@@ -730,15 +766,15 @@ class AnalysisApp:
                     ('bp',True),('bp_lo','1.0'),('bp_hi','40.0'),('bp_ord','4'),
                     ('notch',True),('notch_f','60'),('car',True),('zs',False),
                     ('art',True),('art_p','85'),
-                    ('win','3.0'),('ov','0.5'),('kf','5'),('feat','Todas'),('csp_nf','2'),('fb_ns','8'),
+                    ('win','3.0'),('ov','0.5'),('kf','5'),('feat','All'),('csp_nf','2'),('fb_ns','8'),
                     ('c_lda',True),('c_svm',True),('c_rf',True),('c_xgb',HAS_XGB),
                     ('c_3class',False),
                     ('p_psd',True),('p_erd',True),('p_topo',True),('p_summary',True),
-                    ('pv_ch','Todos'),
+                    ('pv_ch','All'),
                     # Individual preview preprocessing toggles
                     ('pv_bp',False),('pv_notch',False),('pv_car',False),('pv_zs',False),
                     # Functional analysis
-                    ('fa_technique','ERD/ERS Interativo'),('fa_win','3.0'),('fa_band','mu (8-13)'),
+                    ('fa_technique','ERD/ERS Interactive'),('fa_win','3.0'),('fa_band','mu (8-13)'),
                     ('fa_ch','C3'),('fa_rqa_dim','10'),('fa_rqa_tau','2')]:
             if isinstance(v,bool): setattr(self.V,n,tk.BooleanVar(value=v))
             else: setattr(self.V,n,tk.StringVar(value=str(v)))
@@ -770,7 +806,7 @@ class AnalysisApp:
     # Main layout 
     def _build(self):
         bar=tk.Frame(self.root,bg=TH["sf2"],height=24); bar.pack(side="bottom",fill="x"); bar.pack_propagate(False)
-        self.st_lbl=tk.Label(bar,text="Pronto",font=("Segoe UI",8),fg=TH["tm"],bg=TH["sf2"]); self.st_lbl.pack(side="left",padx=12)
+        self.st_lbl=tk.Label(bar,text="Ready",font=("Segoe UI",8),fg=TH["tm"],bg=TH["sf2"]); self.st_lbl.pack(side="left",padx=12)
         pw=tk.PanedWindow(self.root,orient=tk.HORIZONTAL,bg=TH["bg"],sashwidth=6,sashrelief="flat")
         pw.pack(fill="both",expand=True)
         # LEFT panel — scrollable controls
@@ -785,7 +821,7 @@ class AnalysisApp:
         lc.bind("<Leave>",lambda e: lc.unbind_all("<MouseWheel>"))
         ct=tk.Frame(cf,bg=TH["bg"]); ct.pack(fill="x",padx=14,pady=8)
         self._bld_ctrl(ct)
-        # RIGHT panel — tabbed (Sinais / Análise Funcional)
+        # RIGHT panel — tabbed (Signals / Functional Analysis)
         rf=tk.Frame(pw,bg=TH["sf"]); pw.add(rf,minsize=400)
         self._bld_right_tabs(rf)
 
@@ -798,23 +834,23 @@ class AnalysisApp:
         tk.Label(tf,text=f"v{VERSION} | PyRiemann:{'Y' if HAS_PYRIEMANN else 'N'} XGB:{'Y' if HAS_XGB else 'N'}",
                  font=("Segoe UI",8),fg=TH["tm"],bg=TH["bg"]).pack(anchor="w")
         # Data
-        s=self._sec(ct,"DADOS DE ENTRADA","📂")
+        s=self._sec(ct,"INPUT DATA","📂")
         r=tk.Frame(s,bg=TH["sf"]); r.pack(fill="x",pady=(0,4))
         self._lbl(r,"Modo:").pack(side="left")
-        for v,t in [("single","1 Sessão"),("multi","Múltiplas")]:
+        for v,t in [("single","1 Session"),("multi","Multiple")]:
             tk.Radiobutton(r,text=t,variable=self.V.mode,value=v,font=("Segoe UI",8),fg=TH["tx"],bg=TH["sf"],selectcolor=TH["sf2"],activebackground=TH["sf"]).pack(side="left",padx=4)
         r2=tk.Frame(s,bg=TH["sf"]); r2.pack(fill="x",pady=(0,4))
         self._lbl(r2,"Protocolo:").pack(side="left")
         for v,t in [("graz_b","Graz B (MI)"),("movement","Movement (3 mov)")]:
             tk.Radiobutton(r2,text=t,variable=self.V.proto,value=v,font=("Segoe UI",8),fg=TH["tx"],bg=TH["sf"],selectcolor=TH["sf2"],activebackground=TH["sf"]).pack(side="left",padx=4)
         r3=tk.Frame(s,bg=TH["sf"]); r3.pack(fill="x",pady=(0,2))
-        self._btn(r3,"Selecionar Arquivo(s)",self._sel_files,"accent").pack(side="left")
-        self.f_lbl=self._lbl(r3,"  Nenhum",fg=TH["tm"]); self.f_lbl.pack(side="left",padx=6)
+        self._btn(r3,"Select File(s)",self._sel_files,"accent").pack(side="left")
+        self.f_lbl=self._lbl(r3,"  None",fg=TH["tm"]); self.f_lbl.pack(side="left",padx=6)
         self.flist=tk.Listbox(s,height=2,font=("Consolas",7),bg=TH["sf2"],fg=TH["tx"],relief="flat",
                               highlightthickness=1,highlightbackground=TH["bd"])
         self.flist.pack(fill="x",pady=(2,0))
         # Preprocessing
-        s=self._sec(ct,"PRÉ-PROCESSAMENTO","⚙")
+        s=self._sec(ct,"PRE-PROCESSING","⚙")
         r=tk.Frame(s,bg=TH["sf"]); r.pack(fill="x",pady=1)
         self._chk(r,"Bandpass",self.V.bp).pack(side="left"); self._lbl(r," Lo:",font=("Segoe UI",8)).pack(side="left")
         self._ent(r,self.V.bp_lo,4).pack(side="left",padx=1); self._lbl(r,"Hi:",font=("Segoe UI",8)).pack(side="left")
@@ -828,19 +864,19 @@ class AnalysisApp:
         self._chk(r,"Artifact Rejection",self.V.art).pack(side="left"); self._lbl(r," Percentil:",font=("Segoe UI",8)).pack(side="left")
         self._ent(r,self.V.art_p,3).pack(side="left",padx=2)
         # Segmentation
-        s=self._sec(ct,"SEGMENTAÇÃO","🔲")
+        s=self._sec(ct,"SEGMENTATION","🔲")
         r=tk.Frame(s,bg=TH["sf"]); r.pack(fill="x")
-        self._lbl(r,"Janela:").pack(side="left"); self._ent(r,self.V.win,4).pack(side="left",padx=2)
+        self._lbl(r,"Window:").pack(side="left"); self._ent(r,self.V.win,4).pack(side="left",padx=2)
         self._lbl(r,"s  Overlap:").pack(side="left"); self._ent(r,self.V.ov,4).pack(side="left",padx=2)
         self._lbl(r," K-Folds:").pack(side="left"); self._ent(r,self.V.kf,3).pack(side="left",padx=2)
         # Features
-        s=self._sec(ct,"EXTRAÇÃO DE FEATURES","🧠")
+        s=self._sec(ct,"FEATURE EXTRACTION","🧠")
         r=tk.Frame(s,bg=TH["sf"]); r.pack(fill="x",pady=(0,4))
-        self._lbl(r,"Técnica:").pack(side="left")
-        ttk.Combobox(r,textvariable=self.V.feat,values=["Todas"]+list(get_fmethods().keys()),
+        self._lbl(r,"Method:").pack(side="left")
+        ttk.Combobox(r,textvariable=self.V.feat,values=["All"]+list(get_fmethods().keys()),
                      width=14,state="readonly",font=("Segoe UI",9)).pack(side="left",padx=6)
         # Classifiers
-        s=self._sec(ct,"CLASSIFICADORES","🎯")
+        s=self._sec(ct,"CLASSIFIERS","🎯")
         r=tk.Frame(s,bg=TH["sf"]); r.pack(fill="x")
         self._chk(r,"LDA",self.V.c_lda).pack(side="left",padx=(0,8))
         self._chk(r,"SVM",self.V.c_svm).pack(side="left",padx=(0,8))
@@ -848,28 +884,28 @@ class AnalysisApp:
         cb=self._chk(r,"XGB",self.V.c_xgb); cb.pack(side="left")
         if not HAS_XGB: cb.config(state="disabled")
         r2=tk.Frame(s,bg=TH["sf"]); r2.pack(fill="x",pady=(4,0))
-        self._chk(r2,"Multi-classe (3 mov.)",self.V.c_3class).pack(side="left")
+        self._chk(r2,"Multi-class (3 mov.)",self.V.c_3class).pack(side="left")
         self._lbl(r2,"  (OvO + 3-way)",font=("Segoe UI",7),fg=TH["tm"]).pack(side="left")
         # Plots
-        s=self._sec(ct,"GRÁFICOS DE SAÍDA","📈")
+        s=self._sec(ct,"OUTPUT FIGURES","📈")
         r=tk.Frame(s,bg=TH["sf"]); r.pack(fill="x",pady=1)
         self._chk(r,"PSD",self.V.p_psd).pack(side="left",padx=(0,6))
         self._chk(r,"ERD/ERS",self.V.p_erd).pack(side="left",padx=(0,6))
         self._chk(r,"Topomap",self.V.p_topo).pack(side="left",padx=(0,6))
-        self._chk(r,"Resumo (Box+HM+CM)",self.V.p_summary).pack(side="left")
+        self._chk(r,"Summary (Box+HM+CM)",self.V.p_summary).pack(side="left")
         # Output
-        s=self._sec(ct,"SAÍDA","💾")
+        s=self._sec(ct,"OUTPUT","💾")
         r=tk.Frame(s,bg=TH["sf"]); r.pack(fill="x",pady=(0,4))
-        self._lbl(r,"Pasta:").pack(side="left"); self._ent(r,self.V.opath,28).pack(side="left",padx=4)
+        self._lbl(r,"Folder:").pack(side="left"); self._ent(r,self.V.opath,28).pack(side="left",padx=4)
         self._btn(r,"...",self._br_out).pack(side="left")
         r=tk.Frame(s,bg=TH["sf"]); r.pack(fill="x")
-        self._lbl(r,"Sub-pasta:").pack(side="left"); self._ent(r,self.V.oname,18).pack(side="left",padx=4)
+        self._lbl(r,"Subfolder:").pack(side="left"); self._ent(r,self.V.oname,18).pack(side="left",padx=4)
         # Actions
         f=tk.Frame(ct,bg=TH["bg"]); f.pack(fill="x",pady=(4,8))
-        self.btn_run=self._btn(f,"▶  EXECUTAR ANÁLISE",self._run,"green"); self.btn_run.pack(fill="x",ipady=6)
+        self.btn_run=self._btn(f,"▶  RUN ANALYSIS",self._run,"green"); self.btn_run.pack(fill="x",ipady=6)
         r=tk.Frame(f,bg=TH["bg"]); r.pack(fill="x",pady=(6,0))
-        self._btn(r,"📂 Abrir Output",self._open_out).pack(side="left",fill="x",expand=True,padx=(0,3))
-        self._btn(r,"⬛ Parar",self._stop,"red").pack(side="left",fill="x",expand=True,padx=(3,0))
+        self._btn(r,"📂 Open Output",self._open_out).pack(side="left",fill="x",expand=True,padx=(0,3))
+        self._btn(r,"⬛ Stop",self._stop,"red").pack(side="left",fill="x",expand=True,padx=(3,0))
         # Log
         s=self._sec(ct,"LOG","📋")
         self.log_t=tk.Text(s,height=8,font=("Consolas",7),bg=TH["sf2"],fg=TH["tx"],relief="flat",
@@ -887,24 +923,24 @@ class AnalysisApp:
         self.nb = ttk.Notebook(parent, style="Dark.TNotebook")
         self.nb.pack(fill="both", expand=True)
         # Tab 1: Signal Preview
-        tab1 = tk.Frame(self.nb, bg=TH["sf"]); self.nb.add(tab1, text="  📡 Sinais  ")
+        tab1 = tk.Frame(self.nb, bg=TH["sf"]); self.nb.add(tab1, text="  📡 Signals  ")
         self._bld_signal_tab(tab1)
         # Tab 2: Functional Analysis
-        tab2 = tk.Frame(self.nb, bg=TH["sf"]); self.nb.add(tab2, text="  🔬 Análise Funcional  ")
+        tab2 = tk.Frame(self.nb, bg=TH["sf"]); self.nb.add(tab2, text="  🔬 Functional Analysis  ")
         self._bld_functional_tab(tab2)
 
     # Tab 1: Signal Preview 
     def _bld_signal_tab(self, parent):
         ctrl = tk.Frame(parent, bg=TH["sf"]); ctrl.pack(fill="x", padx=10, pady=(8, 4))
         # Individual preprocessing checkboxes
-        tk.Label(ctrl, text="Pré-proc:", font=("Segoe UI", 8, "bold"), fg=TH["yl"], bg=TH["sf"]).pack(side="left")
+        tk.Label(ctrl, text="Pre-proc:", font=("Segoe UI", 8, "bold"), fg=TH["yl"], bg=TH["sf"]).pack(side="left")
         for txt, var in [("BP", self.V.pv_bp), ("Notch", self.V.pv_notch),
                          ("CAR", self.V.pv_car), ("Z-Score", self.V.pv_zs)]:
             tk.Checkbutton(ctrl, text=txt, variable=var, font=("Segoe UI", 8), fg=TH["tx"],
                            bg=TH["sf"], selectcolor=TH["sf2"], activebackground=TH["sf"],
                            command=self._upd_pv).pack(side="left", padx=2)
-        tk.Label(ctrl, text="  Canal:", font=("Segoe UI", 8), fg=TH["tx"], bg=TH["sf"]).pack(side="left")
-        cb = ttk.Combobox(ctrl, textvariable=self.V.pv_ch, values=["Todos"] + CH_ORDER,
+        tk.Label(ctrl, text="  Channel:", font=("Segoe UI", 8), fg=TH["tx"], bg=TH["sf"]).pack(side="left")
+        cb = ttk.Combobox(ctrl, textvariable=self.V.pv_ch, values=["All"] + CH_ORDER,
                           width=8, state="readonly", font=("Segoe UI", 8))
         cb.pack(side="left", padx=4); cb.bind("<<ComboboxSelected>>", lambda e: self._upd_pv())
         # Navigation controls
@@ -931,7 +967,7 @@ class AnalysisApp:
         self.pax.set_facecolor(TH["sf2"]); self.pax.tick_params(colors=TH["tm"])
         for sp in ['top', 'right']: self.pax.spines[sp].set_visible(False)
         for sp in ['bottom', 'left']: self.pax.spines[sp].set_color(TH["bd"])
-        self.pax.set_title("Carregue dados para visualizar", color=TH["tm"], fontsize=10)
+        self.pax.set_title("Load data to visualize", color=TH["tm"], fontsize=10)
         self.pcv = FigureCanvasTkAgg(self.pfig, master=self._pv_frame)
         self.pcv.get_tk_widget().pack(fill="both", expand=True); self.pcv.draw()
 
@@ -958,7 +994,7 @@ class AnalysisApp:
         trials = self._get_pv_trials()
         if not trials:
             self.pfig.clear(); ax = self.pfig.add_subplot(111); ax.set_facecolor(TH["sf2"])
-            ax.text(0.5, 0.5, "Nenhum dado carregado\nSelecione arquivo(s)", ha='center', va='center',
+            ax.text(0.5, 0.5, "No data loaded\nSelect file(s)", ha='center', va='center',
                     transform=ax.transAxes, color=TH["tm"], fontsize=11)
             ax.set_xticks([]); ax.set_yticks([]); self.pcv.draw(); return
         # Trial selection
@@ -979,13 +1015,13 @@ class AnalysisApp:
         if self.V.pv_notch.get(): active.append("Notch")
         if self.V.pv_car.get(): active.append("CAR")
         if self.V.pv_zs.get(): active.append("ZS")
-        filt_txt = "+".join(active) if active else "Bruto"
+        filt_txt = "+".join(active) if active else "Raw"
         self.pfig.clear()
         if len(chs) == 1:
             ax = self.pfig.add_subplot(111); ax.set_facecolor(TH["sf2"]); ci = chs[0]
             ax.plot(t, trial[ci, s0:s1], lw=0.5, color=CH_COLORS[ci % 8], alpha=0.9)
             ax.set_title(f"{CH_ORDER[ci]} — {filt_txt} — Trial {ti+1}", color=TH["tx"], fontsize=10, fontweight='bold')
-            ax.set_xlabel("Tempo (s)", color=TH["tm"], fontsize=8); ax.set_ylabel("µV", color=TH["tm"], fontsize=8)
+            ax.set_xlabel("Time (s)", color=TH["tm"], fontsize=8); ax.set_ylabel("µV", color=TH["tm"], fontsize=8)
             ax.tick_params(colors=TH["tm"], labelsize=7); ax.grid(True, alpha=0.15, color=TH["bd"])
             for sp in ['top', 'right']: ax.spines[sp].set_visible(False)
             for sp in ['bottom', 'left']: ax.spines[sp].set_color(TH["bd"])
@@ -1001,27 +1037,27 @@ class AnalysisApp:
                 for sp in ['bottom', 'left']: ax.spines[sp].set_color(TH["bd"])
                 ax.grid(True, alpha=0.1, color=TH["bd"])
                 if pi < len(chs) - 1: ax.tick_params(labelbottom=False)
-            axes[-1].set_xlabel("Tempo (s)", color=TH["tm"], fontsize=8)
+            axes[-1].set_xlabel("Time (s)", color=TH["tm"], fontsize=8)
             axes[0].set_title(f"{filt_txt} — Trial {ti+1}", color=TH["tx"], fontsize=10, fontweight='bold')
         self.pfig.tight_layout(); self.pcv.draw()
 
     # Tab 2: Functional Analysis
     def _bld_functional_tab(self, parent):
         ctrl = tk.Frame(parent, bg=TH["sf"]); ctrl.pack(fill="x", padx=10, pady=(8, 4))
-        tk.Label(ctrl, text="Técnica:", font=("Segoe UI", 9, "bold"), fg=TH["ac"], bg=TH["sf"]).pack(side="left")
-        techniques = ["ERD/ERS Interativo", "Conectividade Clássica (Coherence)",
-                      "Conectividade RQA (STR)", "Recurrence Plot Médio",
-                      "Atrator Médio Suavizado", "CSP Spatial Filters",
-                      "Métricas Não-Lineares", "Phase-Amplitude Coupling"]
+        tk.Label(ctrl, text="Method:", font=("Segoe UI", 9, "bold"), fg=TH["ac"], bg=TH["sf"]).pack(side="left")
+        techniques = ["ERD/ERS Interactive", "Classical Connectivity (Coherence)",
+                      "RQA Connectivity (STR)", "Mean Recurrence Plot",
+                      "Mean Smoothed Attractor", "CSP Spatial Filters",
+                      "Nonlinear Metrics", "Phase-Amplitude Coupling"]
         ttk.Combobox(ctrl, textvariable=self.V.fa_technique, values=techniques,
                      width=30, state="readonly", font=("Segoe UI", 9)).pack(side="left", padx=6)
         # Params row
         p_row = tk.Frame(parent, bg=TH["sf"]); p_row.pack(fill="x", padx=10, pady=(0, 4))
-        tk.Label(p_row, text="Banda:", font=("Segoe UI", 8), fg=TH["tx"], bg=TH["sf"]).pack(side="left")
+        tk.Label(p_row, text="Band:", font=("Segoe UI", 8), fg=TH["tx"], bg=TH["sf"]).pack(side="left")
         ttk.Combobox(p_row, textvariable=self.V.fa_band,
                      values=["mu (8-13)", "beta (13-30)", "alpha (8-12)", "gamma (30-45)", "theta (4-8)", "broadband (1-40)"],
                      width=14, state="readonly", font=("Segoe UI", 8)).pack(side="left", padx=4)
-        tk.Label(p_row, text="Canal:", font=("Segoe UI", 8), fg=TH["tx"], bg=TH["sf"]).pack(side="left", padx=(8, 2))
+        tk.Label(p_row, text="Channel:", font=("Segoe UI", 8), fg=TH["tx"], bg=TH["sf"]).pack(side="left", padx=(8, 2))
         ttk.Combobox(p_row, textvariable=self.V.fa_ch, values=CH_ORDER,
                      width=6, state="readonly", font=("Segoe UI", 8)).pack(side="left", padx=2)
         tk.Label(p_row, text="Win(s):", font=("Segoe UI", 8), fg=TH["tx"], bg=TH["sf"]).pack(side="left", padx=(8, 2))
@@ -1033,17 +1069,17 @@ class AnalysisApp:
         self._ent(p_row, self.V.fa_rqa_tau, 3).pack(side="left")
         # Buttons row
         btn_row = tk.Frame(parent, bg=TH["sf"]); btn_row.pack(fill="x", padx=10, pady=(0, 4))
-        self._btn(btn_row, "▶ Computar", self._fa_compute, "green").pack(side="left", padx=(0, 4))
+        self._btn(btn_row, "▶ Compute", self._fa_compute, "green").pack(side="left", padx=(0, 4))
         # Navigation for ERD/ERS blocks
         self._fa_block_idx = 0
         self._btn(btn_row, "◀ Bloco", lambda: self._fa_nav(-1), "accent").pack(side="left", padx=2)
-        self._fa_block_lbl = tk.Label(btn_row, text="Média", font=("Segoe UI", 9), fg=TH["tx"], bg=TH["sf"])
+        self._fa_block_lbl = tk.Label(btn_row, text="Mean", font=("Segoe UI", 9), fg=TH["tx"], bg=TH["sf"])
         self._fa_block_lbl.pack(side="left", padx=4)
         self._btn(btn_row, "Bloco ▶", lambda: self._fa_nav(1), "accent").pack(side="left", padx=2)
-        self._btn(btn_row, "Média", lambda: self._fa_nav(0, reset=True), "accent").pack(side="left", padx=4)
-        self._btn(btn_row, "💾 Salvar", self._fa_save, "normal").pack(side="right")
+        self._btn(btn_row, "Mean", lambda: self._fa_nav(0, reset=True), "accent").pack(side="left", padx=4)
+        self._btn(btn_row, "💾 Save", self._fa_save, "normal").pack(side="right")
         # Info label
-        self._fa_info = tk.Label(parent, text="Selecione uma técnica e clique Computar",
+        self._fa_info = tk.Label(parent, text="Select a method and click Compute",
                                   font=("Segoe UI", 8), fg=TH["tm"], bg=TH["sf"], wraplength=600, justify="left")
         self._fa_info.pack(fill="x", padx=10, pady=(0, 4))
         # Canvas
@@ -1051,14 +1087,14 @@ class AnalysisApp:
         self._fa_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         self._fa_fig, self._fa_ax = plt.subplots(figsize=(7, 5))
         self._fa_fig.patch.set_facecolor(TH["sf"])
-        self._fa_ax.set_facecolor(TH["sf2"]); self._fa_ax.set_title("Aguardando...", color=TH["tm"])
+        self._fa_ax.set_facecolor(TH["sf2"]); self._fa_ax.set_title("Waiting...", color=TH["tm"])
         self._fa_cv = FigureCanvasTkAgg(self._fa_fig, master=self._fa_frame)
         self._fa_cv.get_tk_widget().pack(fill="both", expand=True); self._fa_cv.draw()
 
     def _fa_nav(self, delta, reset=False):
         if reset: self._fa_block_idx = 0
         else: self._fa_block_idx += delta
-        if self.V.fa_technique.get() == "ERD/ERS Interativo": self._fa_compute()
+        if self.V.fa_technique.get() == "ERD/ERS Interactive": self._fa_compute()
 
     def _fa_save(self):
         """Save current functional analysis plot to output folder."""
@@ -1080,9 +1116,9 @@ class AnalysisApp:
     def _fa_compute(self):
         """Dispatch functional analysis computation in background thread."""
         if not self.raw_trials:
-            self._fa_info.config(text="⚠ Carregue dados primeiro."); return
+            self._fa_info.config(text="⚠ Load data first."); return
         tech = self.V.fa_technique.get()
-        self._fa_info.config(text=f"Computando {tech}...")
+        self._fa_info.config(text=f"Computing {tech}...")
         threading.Thread(target=self._fa_worker, args=(tech,), daemon=True).start()
 
     def _fa_worker(self, tech):
@@ -1096,34 +1132,34 @@ class AnalysisApp:
 
             self._fa_fig.clear()
 
-            if tech == "ERD/ERS Interativo":
+            if tech == "ERD/ERS Interactive":
                 self._fa_erd_interactive(trials, lo, hi, chi, ch_name)
-            elif tech == "Conectividade Clássica (Coherence)":
+            elif tech == "Classical Connectivity (Coherence)":
                 self._fa_coherence(trials, lo, hi)
-            elif tech == "Conectividade RQA (STR)":
+            elif tech == "RQA Connectivity (STR)":
                 self._fa_str_connectivity(trials, lo, hi, dim, tau)
-            elif tech == "Recurrence Plot Médio":
+            elif tech == "Mean Recurrence Plot":
                 self._fa_mean_rp(trials, chi, ch_name, dim, tau)
-            elif tech == "Atrator Médio Suavizado":
+            elif tech == "Mean Smoothed Attractor":
                 self._fa_mean_attractor(trials, chi, ch_name, dim, tau)
             elif tech == "CSP Spatial Filters":
                 self._fa_csp_maps(trials)
-            elif tech == "Métricas Não-Lineares":
+            elif tech == "Nonlinear Metrics":
                 self._fa_nonlinear_metrics(trials, lo, hi)
             elif tech == "Phase-Amplitude Coupling":
                 self._fa_pac(trials, chi, ch_name)
             else:
                 ax = self._fa_fig.add_subplot(111)
-                ax.text(0.5, 0.5, f"Técnica '{tech}' não implementada", ha='center', va='center', transform=ax.transAxes)
+                ax.text(0.5, 0.5, f"Method '{tech}' not implemented", ha='center', va='center', transform=ax.transAxes)
 
             self._fa_fig.tight_layout()
             self.root.after(0, self._fa_cv.draw)
         except Exception as e:
             import traceback
-            self.root.after(0, lambda: self._fa_info.config(text=f"✗ Erro: {e}"))
+            self.root.after(0, lambda: self._fa_info.config(text=f"✗ Error: {e}"))
             self._log(f"FA error: {traceback.format_exc()}")
 
-    # FA: ERD/ERS Interativo 
+    # FA: ERD/ERS Interactive 
     def _fa_erd_interactive(self, trials, lo, hi, chi, ch_name):
         bands = [('mu', 8, 13), ('beta', 13, 30)]
         tchs = ['C3', 'Cz', 'C4']
@@ -1133,7 +1169,7 @@ class AnalysisApp:
         n_trials = len(trials)
         if self._fa_block_idx == 0:
             # Mean across all trials
-            title = "Média de todos os trials"
+            title = "Mean of all trials"
             selected = list(range(n_trials))
         else:
             idx = max(1, min(abs(self._fa_block_idx), n_trials))
@@ -1177,7 +1213,7 @@ class AnalysisApp:
                 if bi == len(bands) - 1: ax.set_xlabel('Time (s)')
         self._fa_fig.suptitle(f'ERD/ERS — {title}', fontsize=12, fontweight='bold')
         self.root.after(0, lambda: self._fa_info.config(
-            text="◀▶ para navegar trials individuais | 'Média' para média geral | Pfurtscheller & Lopes da Silva (1999)"))
+            text="◀▶ to browse individual trials | 'Mean' for the overall mean | Pfurtscheller & Lopes da Silva (1999)"))
 
     # FA: Classical Coherence Connectivity 
     def _fa_coherence(self, trials, lo, hi):
@@ -1201,7 +1237,7 @@ class AnalysisApp:
         self._fa_fig.colorbar(im, ax=ax, label='Coherence')
         ax.set_title(f'Coherence ({lo}-{hi} Hz) — {self.V.fa_band.get()}', fontweight='bold')
         self.root.after(0, lambda: self._fa_info.config(
-            text="Matriz de coerência espectral entre canais. Valores altos indicam sincronização de fase/amplitude."))
+            text="Spectral coherence matrix between channels. High values indicate phase/amplitude synchronization."))
 
     # FA: STR Connectivity (RQA-based) 
     def _fa_str_connectivity(self, trials, lo, hi, dim, tau):
@@ -1226,8 +1262,8 @@ class AnalysisApp:
             ax.set_title(f'{title} ({lo}-{hi} Hz)', fontweight='bold', fontsize=10)
         self._fa_fig.suptitle('STR Connectivity — Rodrigues et al. (2019)', fontsize=12, fontweight='bold')
         self.root.after(0, lambda: self._fa_info.config(
-            text="Cross-recurrence entre pares de canais. RR=taxa de recorrência cruzada, DET=determinismo cruzado. "
-                 "Valores altos indicam dinâmicas similares entre regiões (Rodrigues et al. 2019)."))
+            text="Cross-recurrence between channel pairs. RR=cross recurrence rate, DET=cross determinism. "
+                 "High values indicate similar dynamics across regions (Rodrigues et al. 2019)."))
 
     # FA: Mean Recurrence Plot 
     def _fa_mean_rp(self, trials, chi, ch_name, dim, tau):
@@ -1258,8 +1294,8 @@ class AnalysisApp:
             axes[ci].set_xlabel('Time index'); axes[ci].set_ylabel('Time index')
         self._fa_fig.suptitle(f'Mean Recurrence Plot — {ch_name} (dim={dim}, τ={tau})', fontsize=12, fontweight='bold')
         self.root.after(0, lambda: self._fa_info.config(
-            text="RP médio por classe. Estruturas diagonais = determinismo. Verticais = laminaridade. "
-                 "Brancos = transições entre estados (Webber & Zbilut 2005)."))
+            text="Mean RP per class. Diagonal structures = determinism. Vertical = laminarity. "
+                 "White = transitions between states (Webber & Zbilut 2005)."))
 
     # FA: Mean Attractor 
     def _fa_mean_attractor(self, trials, chi, ch_name, dim, tau):
@@ -1298,8 +1334,8 @@ class AnalysisApp:
                 ax.tick_params(labelsize=6)
         self._fa_fig.suptitle(f'Mean Smoothed Attractor — {ch_name} (dim=3, τ={tau})', fontsize=12, fontweight='bold')
         self.root.after(0, lambda: self._fa_info.config(
-            text="Atrator médio reconstruído via embedding temporal. Diferenças na topologia indicam "
-                 "dinâmicas distintas entre classes (Takens 1981)."))
+            text="Mean attractor reconstructed via time-delay embedding. Topological differences indicate "
+                 "distinct dynamics across classes (Takens 1981)."))
 
     # FA: CSP Spatial Filters
     def _fa_csp_maps(self, trials):
@@ -1330,8 +1366,8 @@ class AnalysisApp:
         else: na, nb = MOV_EN.get(ca-19, str(ca)), MOV_EN.get(cb-19, str(cb))
         self._fa_fig.suptitle(f'CSP Spatial Filters — {na} vs {nb}', fontsize=12, fontweight='bold')
         self.root.after(0, lambda: self._fa_info.config(
-            text="Filtros espaciais CSP. Primeiro/último filtro maximizam variância de cada classe. "
-                 "Pesos positivos (vermelho) e negativos (azul) indicam contribuição de cada eletrodo."))
+            text="CSP spatial filters. First/last filters maximize the variance of each class. "
+                 "Positive (red) and negative (blue) weights indicate each electrode's contribution."))
 
     # FA: Nonlinear Metrics 
     def _fa_nonlinear_metrics(self, trials, lo, hi):
@@ -1424,8 +1460,8 @@ class AnalysisApp:
         self._fa_fig.suptitle(f'Phase-Amplitude Coupling — {ch_name}\nTort et al. (2010), Canolty et al. (2006)',
                                fontsize=11, fontweight='bold')
         self.root.after(0, lambda: self._fa_info.config(
-            text="Modulation Index (MI): acoplamento entre fase de baixa frequência e amplitude de alta frequência. "
-                 "MI alto indica que a amplitude de gamma/beta é modulada pela fase de theta/alpha."))
+            text="Modulation Index (MI): coupling between low-frequency phase and high-frequency amplitude. "
+                 "High MI indicates that gamma/beta amplitude is modulated by theta/alpha phase."))
 
     # File / data management
     def _sel_files(self):
@@ -1436,7 +1472,7 @@ class AnalysisApp:
             fps = filedialog.askopenfilenames(title="CSVs", filetypes=[("CSV", "*.csv")])
             if fps: self.loaded_files = list(fps)
         n = len(self.loaded_files)
-        self.f_lbl.config(text=f"  {n} arquivo{'s' if n != 1 else ''}", fg=TH["gn"] if n else TH["tm"])
+        self.f_lbl.config(text=f"  {n} file{'s' if n != 1 else ''}", fg=TH["gn"] if n else TH["tm"])
         self.flist.delete(0, tk.END)
         for f in self.loaded_files: self.flist.insert(tk.END, os.path.basename(f))
         if self.loaded_files: self._preload()
@@ -1469,7 +1505,7 @@ class AnalysisApp:
 
     def _br_out(self): p = filedialog.askdirectory(initialdir=self.V.opath.get()); p and self.V.opath.set(p)
     def _open_out(self):
-        if self.is_running: messagebox.showwarning("", "Aguarde a análise finalizar."); return
+        if self.is_running: messagebox.showwarning("", "Please wait for the analysis to finish."); return
         p = self._odir()
         if os.path.isdir(p): os.startfile(p)
         elif os.path.isdir(self.V.opath.get()): os.startfile(self.V.opath.get())
@@ -1485,12 +1521,12 @@ class AnalysisApp:
             self.root.after(100, self._poll)
         except tk.TclError:
             pass  # window was destroyed
-    def _stop(self): self.is_running = False; self._log("⬛ Parado.")
+    def _stop(self): self.is_running = False; self._log("⬛ Stopped.")
 
     # Analysis pipeline
     def _run(self):
         if self.is_running: return
-        if not self.loaded_files: messagebox.showwarning("", "Selecione arquivo(s)."); return
+        if not self.loaded_files: messagebox.showwarning("", "Select file(s)."); return
         od = self._odir(); os.makedirs(od, exist_ok=True)
         self.is_running = True; self.btn_run.config(state="disabled"); self.log_t.delete("1.0", tk.END)
         self._apply_filt(); self._upd_pv()
@@ -1501,7 +1537,7 @@ class AnalysisApp:
             import matplotlib as _m; _m.use("Agg", force=True); plt.switch_backend("Agg")
             self._log("=" * 50 + f"\n  BCI-IM Analysis Pipeline v{VERSION}\n" + "=" * 50)
             proto = self.V.proto.get()
-            self._log("\n[1/6] Carregando...")
+            self._log("\n[1/6] Loading...")
             at = []; al = []; ar = []
             for fp in self.loaded_files:
                 if not self.is_running: return
@@ -1512,12 +1548,12 @@ class AnalysisApp:
                 if not trials: self._log("    ⚠ 0 trials"); continue
                 self._log(f"    {len(trials)} trials, {len(rest)} rest segments")
                 at.extend(trials); al.extend(labels.tolist()); ar.extend(rest)
-            if not at: self._log("\n✗ Nenhum trial."); self._fin(); return
+            if not at: self._log("\n✗ No trials."); self._fin(); return
             labels = np.array(al)
             self._log(f"\n  Total: {len(at)} trials, {len(ar)} rest segments")
             self._log(f"  Classes: {dict(zip(*np.unique(labels, return_counts=True)))}")
 
-            self._log("\n[2/6] Pré-processamento...")
+            self._log("\n[2/6] Pre-processing...")
             rp = [r.copy() for r in ar]
             if self.V.notch.get():
                 f = float(self.V.notch_f.get()); at = pp_notch(at, f); rp = pp_notch(rp, f); self._log(f"  ✓ Notch {f}Hz")
@@ -1537,21 +1573,21 @@ class AnalysisApp:
                 ln = {l: MOV_EN.get(l - 19, MOV_EN.get(l, f"C{l}")) for l in ul}
 
             if len(ul) < 2:
-                self._log(f"\n  ⚠ Apenas 1 classe. Pulando classificação.")
-                self._log(f"\n{'=' * 50}\n  CONCLUÍDO! → {od}\n{'=' * 50}")
+                self._log(f"\n  ⚠ Only 1 class. Skipping classification.")
+                self._log(f"\n{'=' * 50}\n  DONE! → {od}\n{'=' * 50}")
                 self._fin(); return
 
             ws = float(self.V.win.get()); ov = float(self.V.ov.get()); nf = int(self.V.kf.get())
             fs = self.V.feat.get(); am = list(get_fmethods().keys())
-            meth = am if fs == "Todas" else [fs]
+            meth = am if fs == "All" else [fs]
             cn = []
             if self.V.c_lda.get(): cn.append('LDA')
             if self.V.c_svm.get(): cn.append('SVM')
             if self.V.c_rf.get(): cn.append('RF')
             if self.V.c_xgb.get() and HAS_XGB: cn.append('XGB')
-            if not cn: self._log("✗ Nenhum classificador!"); self._fin(); return
+            if not cn: self._log("✗ No classifier!"); self._fin(); return
 
-            self._log(f"\n[3/6] Segmentação (win={ws}s, overlap={ov})")
+            self._log(f"\n[3/6] Segmentation (win={ws}s, overlap={ov})")
             self._log(f"  Features: {meth}\n  Classificadores: {cn}")
 
             allr = []
@@ -1561,20 +1597,20 @@ class AnalysisApp:
                 pt = f"{ca}v{cb}"
                 self._log(f"\n  ── {na} vs {nb} ──")
                 X, y, g = seg_trials(at, labels, ca, cb, ws, ov)
-                if X is None: self._log("    ⚠ Dados insuficientes."); continue
+                if X is None: self._log("    ⚠ Insufficient data."); continue
                 self._log(f"    Windows: {len(X)} (c0:{np.sum(y == 0)}, c1:{np.sum(y == 1)})")
                 lm = {0: na, 1: nb}
                 if self.V.art.get():
                     pc = float(self.V.art_p.get()); X, y, g, ri = rej_art(X, y, g, pc)
                     self._log(f"    Artifact rej: {ri['n_rej']}/{ri['n_total']} ({ri['pct']:.1f}%)")
-                    if len(X) < 4: self._log("    ⚠ Insuficiente."); continue
-                self._log("\n[4/6] Gerando gráficos...")
+                    if len(X) < 4: self._log("    ⚠ Insufficient."); continue
+                self._log("\n[4/6] Generating figures...")
                 if self.V.p_psd.get(): gen_psd(X, y, lm, od, pt); self._log("    ✓ PSD")
                 if self.V.p_erd.get():
                     _, fb = gen_erd(X, y, lm, rp, od, pt)
                     self._log(f"    ✓ ERD/ERS {'(fallback)' if fb else '(rest baseline)'}")
                 if self.V.p_topo.get(): gen_topo(X, y, lm, od, pt); self._log("    ✓ Topomap")
-                self._log(f"\n[5/6] Classificação ({pt})...")
+                self._log(f"\n[5/6] Classification ({pt})...")
                 pr = run_clf(X, y, g, meth, cn, nf, self._log)
                 for r in pr:
                     r['pair'] = pt; allr.append(r)
@@ -1586,7 +1622,7 @@ class AnalysisApp:
 
             # 3-class classification for movement protocol
             if self.V.c_3class.get() and proto == "movement" and len(ul) >= 3:
-                self._log(f"\n  ── Multi-classe (3-way) ──")
+                self._log(f"\n  ── Multi-class (3-way) ──")
                 X3, y3, g3 = seg_trials_multi(at, labels, ul, ws, ov)
                 if X3 is not None:
                     lm3 = {i: ln.get(c, str(c)) for i, c in enumerate(sorted(ul))}
@@ -1595,39 +1631,39 @@ class AnalysisApp:
                         pc = float(self.V.art_p.get()); X3, y3, g3, ri = rej_art(X3, y3, g3, pc)
                         self._log(f"    Artifact rej: {ri['n_rej']}/{ri['n_total']}")
                     if len(X3) < 6:
-                        self._log("    ⚠ Dados insuficientes para 3-class após rejeição.")
+                        self._log("    ⚠ Insufficient data for 3-class after rejection.")
                     else:
                         n_groups = len(np.unique(g3))
                         self._log(f"    Groups: {n_groups}, samples: {len(X3)}")
                         if self.V.p_psd.get(): gen_psd(X3, y3, lm3, od, "3class"); self._log("    ✓ PSD 3-class")
                         if self.V.p_topo.get(): gen_topo(X3, y3, lm3, od, "3class"); self._log("    ✓ Topo 3-class")
-                        self._log(f"\n    Classificação 3-way...")
+                        self._log(f"\n    3-way classification...")
                         try:
                             pr3 = run_clf(X3, y3, g3, meth, cn, nf, self._log)
-                            self._log(f"    → {len(pr3)} resultados obtidos")
+                            self._log(f"    → {len(pr3)} results obtained")
                             for r in pr3:
                                 r['pair'] = '3class'; allr.append(r)
                                 self._log(f"    {r['method']:12s}+{r['clf']:4s}: Acc={r['acc_mean']:.1%}±{r['acc_std']:.1%} κ={r['kappa_mean']:.3f}")
                             if self.V.p_summary.get() and pr3:
                                 gen_summary_plot(pr3, lm3, od, "3class"); self._log("    ✓ Summary 3-class")
                             elif not pr3:
-                                self._log("    ⚠ Nenhum resultado de classificação 3-way (dados insuficientes por fold?)")
+                                self._log("    ⚠ No 3-way classification result (insufficient data per fold?)")
                         except Exception as e:
-                            self._log(f"    ✗ Erro 3-class: {e}")
+                            self._log(f"    ✗ 3-class error: {e}")
                             import traceback; self._log(traceback.format_exc())
                         self._close_worker_figs(); gc.collect()
                 else:
-                    self._log("    ⚠ Segmentação multi-classe falhou.")
+                    self._log("    ⚠ Multi-class segmentation failed.")
 
-            self._log(f"\n[6/6] Resumo final...")
+            self._log(f"\n[6/6] Final summary...")
             if allr:
                 save_csv(allr, od, "summary"); self._log("    ✓ CSV")
-                self._log("\n  ═══ TOP 5 RESULTADOS ═══")
+                self._log("\n  ═══ TOP 5 RESULTS ═══")
                 for _, r in pd.DataFrame(allr).nlargest(5, 'acc_mean').iterrows():
                     self._log(f"    {r['pair']} | {r['method']}+{r['clf']} | Acc={r['acc_mean']:.1%} | κ={r['kappa_mean']:.3f}")
-            self._log(f"\n{'=' * 50}\n  CONCLUÍDO! → {od}\n{'=' * 50}")
+            self._log(f"\n{'=' * 50}\n  DONE! → {od}\n{'=' * 50}")
         except Exception as e:
-            self._log(f"\n✗ ERRO: {e}"); import traceback; self._log(traceback.format_exc())
+            self._log(f"\n✗ ERROR: {e}"); import traceback; self._log(traceback.format_exc())
         finally:
             self._fin()
 
@@ -1654,7 +1690,7 @@ class AnalysisApp:
         except: pass
         try:
             self.root.after(0, lambda: self.btn_run.config(state="normal"))
-            self.root.after(0, lambda: self.st_lbl.config(text="Concluído", fg=TH["gn"]))
+            self.root.after(0, lambda: self.st_lbl.config(text="Done", fg=TH["gn"]))
         except tk.TclError: pass
 
     def run(self): self.root.mainloop()
