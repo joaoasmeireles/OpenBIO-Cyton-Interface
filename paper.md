@@ -149,7 +149,5 @@ design decisions and scientific claims.
 
 # Acknowledgements
 
-<<< Optional: acknowledge advisors, funding agencies (e.g. CAPES, CNPq, FAPESP),
-and collaborators here, or delete this section. >>>
 
 # References
