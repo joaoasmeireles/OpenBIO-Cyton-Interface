@@ -148,6 +148,9 @@ tested every function to verify correctness and integrity, and retained all core
 design decisions and scientific claims.
 
 # Acknowledgements
-
+This work was supported by the São Paulo Research Foundation (FAPESP) under grant
+\#2020/09838-0. The author also gratefully acknowledges the
+Instituto Tecnológico de Aeronáutica (ITA) for institutional support and
+infrastructure.
 
 # References
