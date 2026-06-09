@@ -9,7 +9,7 @@ tags:
   - Signal processing
 authors:
   - name: "João Alfredo S de Meireles"
-    orcid: 0000-0003-4284-874X  
+    orcid: 0009-0006-2554-2692  
     corresponding: true
     affiliation: 1
 affiliations:
